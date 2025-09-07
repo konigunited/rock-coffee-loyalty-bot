@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: rock_coffee_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rock_coffee_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 7R4P5T4R
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Rock Coffee Loyalty Bot
+  bot:
+    build: .
+    container_name: rock_coffee_bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      BOT_TOKEN: 8369634150:AAHAlkUetDEm6lNSsyFZ1cghLXtLQV72Vcs
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: rock_coffee_bot
+      DB_USER: postgres
+      DB_PASSWORD: 7R4P5T4R
+      JWT_SECRET: your_jwt_secret_here
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: rock_coffee_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - bot
+
+  # Redis for session storage (optional upgrade)
+  redis:
+    image: redis:7-alpine
+    container_name: rock_coffee_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
