@@ -118,12 +118,20 @@ export class ClientService {
       RETURNING id
     `;
     
+    // Convert birth_date format if needed
+    let processedBirthDate = data.birth_date;
+    if (data.birth_date) {
+      // Convert DD.MM.YYYY to YYYY-MM-DD
+      const [day, month, year] = data.birth_date.split('.');
+      processedBirthDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
     const result = await Database.queryOne(sql, [
       data.telegram_id || null,
       data.card_number,
       data.full_name,
       data.phone || null,
-      data.birth_date || null,
+      processedBirthDate || null,
       data.notes || null
     ]);
 
