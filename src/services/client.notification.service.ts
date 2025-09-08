@@ -152,7 +152,7 @@ export class ClientNotificationService {
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [{ text: '💳 Моя карта лояльности', callback_data: 'my_card' }],
-        [{ text: '📍 Наши кофейни', callback_data: 'coffee_shops' }],
+        [{ text: '📍 Наша кофейня', callback_data: 'coffee_shops' }],
         [{ text: 'ℹ️ О программе лояльности', callback_data: 'about_program' }]
       ];
 
