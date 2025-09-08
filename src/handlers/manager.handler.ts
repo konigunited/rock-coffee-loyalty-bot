@@ -515,12 +515,13 @@ export class ManagerHandler {
       const parsedData: any = {};
 
       for (const line of lines) {
-        if (line.toLowerCase().startsWith('фио:')) {
-          parsedData.full_name = line.substring(4).trim();
-        } else if (line.toLowerCase().startsWith('telegram id:')) {
-          parsedData.telegram_id = parseInt(line.substring(12).trim());
-        } else if (line.toLowerCase().startsWith('username:')) {
-          parsedData.username = line.substring(9).trim().replace('@', '');
+        const lowerLine = line.toLowerCase();
+        if (lowerLine.startsWith('фио:')) {
+          parsedData.full_name = line.substring(line.indexOf(':') + 1).trim();
+        } else if (lowerLine.startsWith('telegram id:') || lowerLine.startsWith('telegramid:')) {
+          parsedData.telegram_id = parseInt(line.substring(line.indexOf(':') + 1).trim());
+        } else if (lowerLine.startsWith('username:')) {
+          parsedData.username = line.substring(line.indexOf(':') + 1).trim().replace('@', '');
         }
       }
 
