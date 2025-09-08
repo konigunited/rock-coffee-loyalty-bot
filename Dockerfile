@@ -34,9 +34,6 @@ RUN npm ci --only=production --legacy-peer-deps && npm cache clean --force
 # Copy built application
 COPY --from=builder /app/dist ./dist
 
-# Copy migrations
-COPY --from=builder /app/migrations ./migrations
-
 # Change ownership to nodejs user
 RUN chown -R nodejs:nodejs /app
 USER nodejs
