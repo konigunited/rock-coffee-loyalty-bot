@@ -8,6 +8,7 @@ export interface FavoriteClient {
   client_name?: string;
   client_card?: string;
   client_balance?: number;
+  last_visit?: Date;
 }
 
 export interface ClientComment {

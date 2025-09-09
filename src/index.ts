@@ -28,7 +28,8 @@ for (const envVar of requiredEnvVars) {
 
 // Initialize services
 console.log('🔗 Initializing Telegram Bot...');
-const bot = new TelegramBot(process.env.BOT_TOKEN!, { polling: true });
+const BOT_TOKEN = process.env.BOT_TOKEN!;
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 console.log('✅ Telegram Bot initialized');
 
 console.log('🌐 Setting up Express server...');
@@ -247,6 +248,15 @@ bot.on('callback_query', async (callbackQuery) => {
     else if (data.startsWith('add_comment:')) {
       const clientId = parseInt(data.split(':')[1]);
       await baristaHandler.addClientComment(ctx, clientId);
+    }
+    else if (data === 'export_today_stats') {
+      await baristaHandler.exportTodayStats(ctx);
+    }
+    else if (data === 'export_week_stats') {
+      await baristaHandler.exportWeekStats(ctx);
+    }
+    else if (data === 'export_month_stats') {
+      await baristaHandler.exportMonthStats(ctx);
     }
     // Manager routes
     else if (data === 'manager_menu') {
@@ -698,7 +708,7 @@ bot.on('document', async (msg) => {
 
     // Get file from Telegram
     const fileInfo = await bot.getFile(msg.document.file_id);
-    const fileUrl = `https://api.telegram.org/file/bot${bot.token}/${fileInfo.file_path}`;
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
     
     // Download and read file content
     const https = require('https');

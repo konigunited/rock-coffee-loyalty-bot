@@ -3,7 +3,7 @@ import Database from '../config/database';
 import { UserService } from '../services/user.service';
 import { ClientService } from '../services/client.service';
 import { PointService } from '../services/point.service';
-import { BotContext } from '../middleware/access.middleware';
+import { BotContext, getCurrentUser } from '../middleware/access.middleware';
 import { UserRole } from '../types/user.types';
 import { sessions } from '../index';
 
@@ -1306,9 +1306,9 @@ export class AdminHandler {
 
       // Send as document
       await this.bot.sendDocument(ctx.message!.chat!.id, Buffer.from(csvContent, 'utf8'), {
-        filename: fileName
-      }, {
         caption: `✅ Экспорт клиентов завершен\n📊 Экспортировано: ${clients.length} записей`
+      }, {
+        filename: fileName
       });
 
     } catch (error) {
@@ -1359,9 +1359,9 @@ export class AdminHandler {
 
       // Send as document
       await this.bot.sendDocument(ctx.message!.chat!.id, Buffer.from(csvContent, 'utf8'), {
-        filename: fileName
-      }, {
         caption: `✅ Экспорт транзакций завершен\n📊 Экспортировано: ${transactions.length} записей`
+      }, {
+        filename: fileName
       });
 
     } catch (error) {
@@ -1421,15 +1421,14 @@ export class AdminHandler {
           // Generate card number
           const cardNumber = await this.generateUniqueCardNumber();
           
+          const currentUser = getCurrentUser(ctx);
           await this.clientService.create({
             full_name: fullName,
             phone: phone,
             birth_date: birthDate,
-            email: email || null,
             card_number: cardNumber,
-            balance: 0,
             telegram_id: null
-          });
+          }, currentUser?.id || 0);
 
           successCount++;
         } catch (error) {
@@ -1518,9 +1517,10 @@ export class AdminHandler {
 
       // Send backup as file
       await this.bot.sendDocument(ctx.message!.chat!.id, Buffer.from(stdout, 'utf8'), {
-        filename: backupFileName
+        caption: `✅ **Резервная копия создана**\n📅 Дата: ${new Date().toLocaleString('ru-RU')}\n💾 Размер: ${Math.round(stdout.length / 1024)} KB`,
+        parse_mode: 'Markdown'
       }, {
-        caption: `✅ **Резервная копия создана**\n📅 Дата: ${new Date().toLocaleString('ru-RU')}\n💾 Размер: ${Math.round(stdout.length / 1024)} KB`
+        filename: backupFileName
       });
 
     } catch (error) {

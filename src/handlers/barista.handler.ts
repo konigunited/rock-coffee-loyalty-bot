@@ -811,6 +811,18 @@ export class BaristaHandler {
     await this.statsHandler.showMonthStats(ctx);
   }
 
+  async exportTodayStats(ctx: BotContext): Promise<void> {
+    await this.statsHandler.exportTodayStats(ctx);
+  }
+
+  async exportWeekStats(ctx: BotContext): Promise<void> {
+    await this.statsHandler.exportWeekStats(ctx);
+  }
+
+  async exportMonthStats(ctx: BotContext): Promise<void> {
+    await this.statsHandler.exportMonthStats(ctx);
+  }
+
   // Show recent operations
   async showRecentOperations(ctx: BotContext): Promise<void> {
     await this.statsHandler.showRecentOperations(ctx);

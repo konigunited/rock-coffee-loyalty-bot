@@ -388,8 +388,7 @@ export class StatsHandler {
         caption: `📊 Экспорт статистики за ${this.getPeriodName(period)}\n\n📅 Период: ${startDate.toLocaleDateString('ru-RU')} - ${endDate.toLocaleDateString('ru-RU')}\n📝 Операций: ${filteredTransactions.length}`,
         parse_mode: 'Markdown'
       }, {
-        filename: filename,
-        contentType: 'text/csv'
+        filename: filename
       });
 
       await this.sendMessage(ctx, '✅ Экспорт завершен! CSV файл отправлен.');
