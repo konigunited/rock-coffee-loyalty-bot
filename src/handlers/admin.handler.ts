@@ -5,6 +5,7 @@ import { ClientService } from '../services/client.service';
 import { PointService } from '../services/point.service';
 import { BotContext } from '../middleware/access.middleware';
 import { UserRole } from '../types/user.types';
+import { sessions } from '../index';
 
 export class AdminHandler {
   private bot: TelegramBot;
@@ -459,39 +460,330 @@ export class AdminHandler {
 
   // Get system settings
   private async getSystemSettings(): Promise<any> {
-    return {
-      pointsPerRuble: 10,
-      rublePerPoint: 1,
-      maxSpendPercent: 50,
-      welcomeBonus: 100,
-      birthdayBonus: 200,
-      pointsExpiryDays: 365,
-      balanceNotifications: true,
-      autoNotifications: true,
-      collectStats: true,
-      debugMode: false
-    };
+    try {
+      // Try to get settings from database
+      const settings = await Database.query(`
+        SELECT setting_key, setting_value, value_type 
+        FROM system_settings 
+        WHERE is_active = true
+      `);
+      
+      // Default settings
+      const defaults = {
+        pointsPerRuble: 10,
+        rublePerPoint: 1,
+        maxSpendPercent: 50,
+        welcomeBonus: 100,
+        birthdayBonus: 200,
+        pointsExpiryDays: 365,
+        balanceNotifications: true,
+        autoNotifications: true,
+        collectStats: true,
+        debugMode: false
+      };
+
+      // If no settings in database, create them
+      if (settings.length === 0) {
+        await this.initializeDefaultSettings(defaults);
+        return defaults;
+      }
+
+      // Build settings object from database
+      const result = { ...defaults };
+      settings.forEach(setting => {
+        let value = setting.setting_value;
+        
+        // Convert types based on value_type
+        if (setting.value_type === 'number') {
+          value = parseInt(value);
+        } else if (setting.value_type === 'boolean') {
+          value = value === 'true';
+        }
+        
+        result[setting.setting_key] = value;
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Error getting system settings:', error);
+      
+      // Return defaults on error
+      return {
+        pointsPerRuble: 10,
+        rublePerPoint: 1,
+        maxSpendPercent: 50,
+        welcomeBonus: 100,
+        birthdayBonus: 200,
+        pointsExpiryDays: 365,
+        balanceNotifications: true,
+        autoNotifications: true,
+        collectStats: true,
+        debugMode: false
+      };
+    }
   }
 
-  // Get system monitoring data
+  // Initialize default settings in database
+  private async initializeDefaultSettings(defaults: any): Promise<void> {
+    try {
+      // Create table if it doesn't exist
+      await Database.query(`
+        CREATE TABLE IF NOT EXISTS system_settings (
+          id SERIAL PRIMARY KEY,
+          setting_key VARCHAR(100) NOT NULL UNIQUE,
+          setting_value TEXT NOT NULL,
+          value_type VARCHAR(20) DEFAULT 'string',
+          description TEXT,
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Insert default settings
+      const settingsToInsert = [
+        { key: 'pointsPerRuble', value: '10', type: 'number', desc: 'Баллов за рубль' },
+        { key: 'rublePerPoint', value: '1', type: 'number', desc: 'Рублей за балл' },
+        { key: 'maxSpendPercent', value: '50', type: 'number', desc: 'Макс. % списания баллов' },
+        { key: 'welcomeBonus', value: '100', type: 'number', desc: 'Приветственный бонус' },
+        { key: 'birthdayBonus', value: '200', type: 'number', desc: 'Бонус в день рождения' },
+        { key: 'pointsExpiryDays', value: '365', type: 'number', desc: 'Срок действия баллов (дни)' },
+        { key: 'balanceNotifications', value: 'true', type: 'boolean', desc: 'Уведомления о балансе' },
+        { key: 'autoNotifications', value: 'true', type: 'boolean', desc: 'Автоматические уведомления' },
+        { key: 'collectStats', value: 'true', type: 'boolean', desc: 'Сбор статистики' },
+        { key: 'debugMode', value: 'false', type: 'boolean', desc: 'Режим отладки' }
+      ];
+
+      for (const setting of settingsToInsert) {
+        await Database.query(`
+          INSERT INTO system_settings (setting_key, setting_value, value_type, description)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (setting_key) DO NOTHING
+        `, [setting.key, setting.value, setting.type, setting.desc]);
+      }
+
+    } catch (error) {
+      console.error('Error initializing default settings:', error);
+    }
+  }
+
+  // Get real system monitoring data
   private async getSystemMonitoring(): Promise<any> {
-    return {
-      dbStatus: '✅ Онлайн',
-      dbConnections: 5,
-      dbSize: 157,
-      dbResponseTime: 45,
-      botStatus: '✅ Активен',
-      activeSessions: 12,
-      messagesToday: 234,
-      errorsLastHour: 0,
-      cpuUsage: 23,
-      ramUsage: 67,
-      diskUsage: 34,
-      uptime: '5 дней 12 часов',
-      transactionsPerMinute: 15,
-      avgApiResponse: 120,
-      systemHealth: '✅ отлично'
-    };
+    try {
+      // Get real database metrics
+      const dbMetrics = await this.getDatabaseMetrics();
+      
+      // Get system metrics
+      const systemMetrics = await this.getSystemMetrics();
+      
+      // Get bot activity metrics
+      const botMetrics = await this.getBotMetrics();
+      
+      return {
+        ...dbMetrics,
+        ...systemMetrics,
+        ...botMetrics,
+        systemHealth: this.calculateSystemHealth(dbMetrics, systemMetrics, botMetrics)
+      };
+      
+    } catch (error) {
+      console.error('Error getting system monitoring:', error);
+      
+      // Return basic status on error
+      return {
+        dbStatus: '❌ Ошибка',
+        dbConnections: 0,
+        dbSize: 0,
+        dbResponseTime: 0,
+        botStatus: '✅ Активен',
+        activeSessions: Object.keys(sessions).length,
+        messagesToday: 0,
+        errorsLastHour: 1,
+        cpuUsage: 0,
+        ramUsage: 0,
+        diskUsage: 0,
+        uptime: process.uptime(),
+        transactionsPerMinute: 0,
+        avgApiResponse: 0,
+        systemHealth: '❌ Проблемы'
+      };
+    }
+  }
+
+  // Get database metrics
+  private async getDatabaseMetrics(): Promise<any> {
+    try {
+      const startTime = Date.now();
+      
+      // Test database connection and get size
+      const dbSizeQuery = await Database.queryOne(`
+        SELECT 
+          pg_size_pretty(pg_database_size(current_database())) as size,
+          numbackends as connections
+        FROM pg_stat_database 
+        WHERE datname = current_database()
+      `);
+      
+      const responseTime = Date.now() - startTime;
+      
+      // Get table stats
+      const tableStats = await Database.query(`
+        SELECT 
+          schemaname,
+          tablename,
+          n_tup_ins + n_tup_upd + n_tup_del as total_changes
+        FROM pg_stat_user_tables
+        ORDER BY total_changes DESC
+        LIMIT 5
+      `);
+      
+      return {
+        dbStatus: '✅ Онлайн',
+        dbConnections: dbSizeQuery?.connections || 0,
+        dbSize: dbSizeQuery?.size || '0 MB',
+        dbResponseTime: responseTime,
+        dbTables: tableStats.length
+      };
+      
+    } catch (error) {
+      console.error('Database metrics error:', error);
+      return {
+        dbStatus: '❌ Недоступна',
+        dbConnections: 0,
+        dbSize: '0 MB',
+        dbResponseTime: 0,
+        dbTables: 0
+      };
+    }
+  }
+
+  // Get system metrics using Node.js APIs
+  private async getSystemMetrics(): Promise<any> {
+    try {
+      const os = require('os');
+      const process = require('process');
+      
+      // Memory usage
+      const memUsage = process.memoryUsage();
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const usedMem = totalMem - freeMem;
+      
+      // CPU usage approximation
+      const cpuUsage = os.loadavg()[0] * 100 / os.cpus().length;
+      
+      // Uptime
+      const uptimeSeconds = process.uptime();
+      const days = Math.floor(uptimeSeconds / 86400);
+      const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+      const uptimeString = `${days} дн. ${hours} ч.`;
+      
+      return {
+        cpuUsage: Math.min(Math.round(cpuUsage), 100),
+        ramUsage: Math.round((usedMem / totalMem) * 100),
+        diskUsage: await this.getDiskUsage(),
+        uptime: uptimeString,
+        nodeMemoryMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+        totalMemoryGB: Math.round(totalMem / 1024 / 1024 / 1024)
+      };
+      
+    } catch (error) {
+      console.error('System metrics error:', error);
+      return {
+        cpuUsage: 0,
+        ramUsage: 0,
+        diskUsage: 0,
+        uptime: '0 дн. 0 ч.',
+        nodeMemoryMB: 0,
+        totalMemoryGB: 0
+      };
+    }
+  }
+
+  // Get bot activity metrics
+  private async getBotMetrics(): Promise<any> {
+    try {
+      // Count active sessions
+      const activeSessions = Object.keys(sessions).length;
+      
+      // Get today's activity from database
+      const today = new Date().toISOString().split('T')[0];
+      
+      const activityStats = await Database.queryOne(`
+        SELECT 
+          COUNT(*) as messages_today
+        FROM activity_log 
+        WHERE DATE(created_at) = $1
+      `, [today]);
+      
+      // Get transaction stats
+      const transactionStats = await Database.queryOne(`
+        SELECT 
+          COUNT(*) as transactions_today,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as transactions_last_hour
+        FROM point_transactions 
+        WHERE DATE(created_at) = $1
+      `, [today]);
+      
+      const transactionsPerMinute = transactionStats?.transactions_last_hour ? 
+        Math.round(transactionStats.transactions_last_hour / 60) : 0;
+      
+      return {
+        botStatus: '✅ Активен',
+        activeSessions,
+        messagesToday: parseInt(activityStats?.messages_today) || 0,
+        transactionsPerMinute,
+        transactionsToday: parseInt(transactionStats?.transactions_today) || 0
+      };
+      
+    } catch (error) {
+      console.error('Bot metrics error:', error);
+      return {
+        botStatus: '⚠️ Ошибки',
+        activeSessions: 0,
+        messagesToday: 0,
+        transactionsPerMinute: 0,
+        transactionsToday: 0
+      };
+    }
+  }
+
+  // Get disk usage (Docker container specific)
+  private async getDiskUsage(): Promise<number> {
+    try {
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execAsync = util.promisify(exec);
+      
+      const { stdout } = await execAsync('df -h / | tail -1 | awk \'{print $5}\'');
+      const usage = parseInt(stdout.trim().replace('%', ''));
+      
+      return isNaN(usage) ? 0 : usage;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  // Calculate overall system health
+  private calculateSystemHealth(dbMetrics: any, systemMetrics: any, botMetrics: any): string {
+    let healthScore = 100;
+    
+    // Database health
+    if (dbMetrics.dbStatus.includes('❌')) healthScore -= 30;
+    if (dbMetrics.dbResponseTime > 1000) healthScore -= 10;
+    
+    // System health
+    if (systemMetrics.cpuUsage > 80) healthScore -= 15;
+    if (systemMetrics.ramUsage > 90) healthScore -= 15;
+    if (systemMetrics.diskUsage > 85) healthScore -= 10;
+    
+    // Bot health
+    if (botMetrics.botStatus.includes('❌')) healthScore -= 20;
+    
+    if (healthScore >= 90) return '✅ Отлично';
+    if (healthScore >= 70) return '⚠️ Хорошо';
+    if (healthScore >= 50) return '⚠️ Удовлетворительно';
+    return '❌ Проблемы';
   }
 
   // Get backup information
@@ -1257,5 +1549,213 @@ export class AdminHandler {
     ];
 
     await this.editOrSendMessage(ctx, backupText, keyboard);
+  }
+
+  // Settings modification functions
+  async showPointsSettings(ctx: BotContext): Promise<void> {
+    const settings = await this.getSystemSettings();
+    
+    const settingsText = 
+      `💰 *Настройки системы баллов*\n\n` +
+      `📊 **Текущие значения:**\n` +
+      `• Баллов за рубль: ${settings.pointsPerRuble}\n` +
+      `• Рублей за балл: ${settings.rublePerPoint}\n` +
+      `• Макс. % списания: ${settings.maxSpendPercent}%\n` +
+      `• Приветственный бонус: ${settings.welcomeBonus} баллов\n\n` +
+      `🔧 Выберите параметр для изменения:`;
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [
+        { text: `💰 Баллов за рубль: ${settings.pointsPerRuble}`, callback_data: 'admin_edit_points_per_ruble' },
+        { text: `🔄 Рублей за балл: ${settings.rublePerPoint}`, callback_data: 'admin_edit_ruble_per_point' }
+      ],
+      [
+        { text: `📊 Макс. % списания: ${settings.maxSpendPercent}%`, callback_data: 'admin_edit_max_spend' },
+        { text: `🎁 Приветственный бонус: ${settings.welcomeBonus}`, callback_data: 'admin_edit_welcome_bonus' }
+      ],
+      [{ text: '◀️ Назад к настройкам', callback_data: 'admin_system_settings' }]
+    ];
+
+    await this.editOrSendMessage(ctx, settingsText, keyboard);
+  }
+
+  async showLoyaltySettings(ctx: BotContext): Promise<void> {
+    const settings = await this.getSystemSettings();
+    
+    const settingsText = 
+      `🎂 *Настройки программы лояльности*\n\n` +
+      `📊 **Текущие значения:**\n` +
+      `• Бонус в день рождения: ${settings.birthdayBonus} баллов\n` +
+      `• Срок действия баллов: ${settings.pointsExpiryDays} дней\n` +
+      `• Уведомления о балансе: ${settings.balanceNotifications ? '✅ Включены' : '❌ Выключены'}\n\n` +
+      `🔧 Выберите параметр для изменения:`;
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [
+        { text: `🎂 День рождения: ${settings.birthdayBonus}`, callback_data: 'admin_edit_birthday_bonus' },
+        { text: `⏰ Срок баллов: ${settings.pointsExpiryDays}`, callback_data: 'admin_edit_points_expiry' }
+      ],
+      [
+        { text: `📢 Уведомления: ${settings.balanceNotifications ? '✅' : '❌'}`, callback_data: 'admin_toggle_balance_notifications' }
+      ],
+      [{ text: '◀️ Назад к настройкам', callback_data: 'admin_system_settings' }]
+    ];
+
+    await this.editOrSendMessage(ctx, settingsText, keyboard);
+  }
+
+  async showBotSettings(ctx: BotContext): Promise<void> {
+    const settings = await this.getSystemSettings();
+    
+    const settingsText = 
+      `🤖 *Настройки бота*\n\n` +
+      `📊 **Текущие значения:**\n` +
+      `• Автоматические уведомления: ${settings.autoNotifications ? '✅ Включены' : '❌ Выключены'}\n` +
+      `• Сбор статистики: ${settings.collectStats ? '✅ Включен' : '❌ Выключен'}\n` +
+      `• Режим отладки: ${settings.debugMode ? '✅ Включен' : '❌ Выключен'}\n\n` +
+      `🔧 Переключите нужные параметры:`;
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [
+        { text: `📱 Авто-уведомления: ${settings.autoNotifications ? '✅' : '❌'}`, callback_data: 'admin_toggle_auto_notifications' }
+      ],
+      [
+        { text: `📊 Сбор статистики: ${settings.collectStats ? '✅' : '❌'}`, callback_data: 'admin_toggle_collect_stats' }
+      ],
+      [
+        { text: `🐛 Режим отладки: ${settings.debugMode ? '✅' : '❌'}`, callback_data: 'admin_toggle_debug_mode' }
+      ],
+      [{ text: '◀️ Назад к настройкам', callback_data: 'admin_system_settings' }]
+    ];
+
+    await this.editOrSendMessage(ctx, settingsText, keyboard);
+  }
+
+  // Update setting in database
+  async updateSetting(key: string, value: any): Promise<void> {
+    try {
+      await Database.query(`
+        UPDATE system_settings 
+        SET setting_value = $1, updated_at = CURRENT_TIMESTAMP 
+        WHERE setting_key = $2
+      `, [value.toString(), key]);
+    } catch (error) {
+      console.error('Error updating setting:', error);
+      throw error;
+    }
+  }
+
+  // Toggle boolean settings
+  async toggleSetting(ctx: BotContext, settingKey: string): Promise<void> {
+    try {
+      const settings = await this.getSystemSettings();
+      const currentValue = settings[settingKey];
+      const newValue = !currentValue;
+      
+      await this.updateSetting(settingKey, newValue);
+      
+      let settingName = '';
+      switch(settingKey) {
+        case 'balanceNotifications': settingName = 'Уведомления о балансе'; break;
+        case 'autoNotifications': settingName = 'Автоматические уведомления'; break;
+        case 'collectStats': settingName = 'Сбор статистики'; break;
+        case 'debugMode': settingName = 'Режим отладки'; break;
+      }
+      
+      await this.bot.sendMessage(
+        ctx.message!.chat!.id, 
+        `✅ ${settingName} ${newValue ? 'включены' : 'выключены'}`
+      );
+      
+      // Refresh the appropriate settings menu
+      if (settingKey === 'balanceNotifications') {
+        await this.showLoyaltySettings(ctx);
+      } else {
+        await this.showBotSettings(ctx);
+      }
+      
+    } catch (error) {
+      console.error('Error toggling setting:', error);
+      await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Ошибка изменения настройки');
+    }
+  }
+
+  // Start editing a numeric setting
+  async startEditNumericSetting(ctx: BotContext, settingKey: string): Promise<void> {
+    let settingName = '';
+    let currentValue = '';
+    const settings = await this.getSystemSettings();
+    
+    switch(settingKey) {
+      case 'pointsPerRuble': settingName = 'Баллов за рубль'; currentValue = settings.pointsPerRuble; break;
+      case 'rublePerPoint': settingName = 'Рублей за балл'; currentValue = settings.rublePerPoint; break;
+      case 'maxSpendPercent': settingName = 'Максимальный % списания'; currentValue = settings.maxSpendPercent; break;
+      case 'welcomeBonus': settingName = 'Приветственный бонус'; currentValue = settings.welcomeBonus; break;
+      case 'birthdayBonus': settingName = 'Бонус в день рождения'; currentValue = settings.birthdayBonus; break;
+      case 'pointsExpiryDays': settingName = 'Срок действия баллов (дни)'; currentValue = settings.pointsExpiryDays; break;
+    }
+    
+    await this.bot.sendMessage(
+      ctx.message!.chat!.id, 
+      `🔧 **Изменение настройки:** ${settingName}\n\n` +
+      `📊 Текущее значение: **${currentValue}**\n\n` +
+      `💭 Введите новое значение:`
+    );
+    
+    // Set session to wait for input
+    if (ctx.session) {
+      ctx.session.waitingFor = `edit_setting_${settingKey}`;
+    }
+  }
+
+  // Process numeric setting input
+  async processSettingInput(ctx: BotContext, settingKey: string, input: string): Promise<void> {
+    try {
+      const value = parseInt(input);
+      
+      if (isNaN(value) || value < 0) {
+        await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Введите корректное положительное число');
+        return;
+      }
+      
+      // Validate ranges
+      if (settingKey === 'maxSpendPercent' && value > 100) {
+        await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Процент списания не может быть больше 100%');
+        return;
+      }
+      
+      await this.updateSetting(settingKey, value);
+      
+      let settingName = '';
+      switch(settingKey) {
+        case 'pointsPerRuble': settingName = 'Баллов за рубль'; break;
+        case 'rublePerPoint': settingName = 'Рублей за балл'; break;
+        case 'maxSpendPercent': settingName = 'Максимальный % списания'; break;
+        case 'welcomeBonus': settingName = 'Приветственный бонус'; break;
+        case 'birthdayBonus': settingName = 'Бонус в день рождения'; break;
+        case 'pointsExpiryDays': settingName = 'Срок действия баллов'; break;
+      }
+      
+      await this.bot.sendMessage(
+        ctx.message!.chat!.id, 
+        `✅ **${settingName}** изменен на: **${value}**`
+      );
+      
+      // Clear session
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+      }
+      
+      // Show appropriate menu
+      if (['pointsPerRuble', 'rublePerPoint', 'maxSpendPercent', 'welcomeBonus'].includes(settingKey)) {
+        await this.showPointsSettings(ctx);
+      } else {
+        await this.showLoyaltySettings(ctx);
+      }
+      
+    } catch (error) {
+      console.error('Error processing setting input:', error);
+      await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Ошибка сохранения настройки');
+    }
   }
 }

@@ -42,7 +42,7 @@ const managerHandler = new ManagerHandler(bot);
 const adminHandler = new AdminHandler(bot);
 
 // Session storage (in production, use Redis or database)
-const sessions = new Map<number, any>();
+export const sessions = new Map<number, any>();
 
 // Middleware
 app.use(helmet());
@@ -391,6 +391,48 @@ bot.on('callback_query', async (callbackQuery) => {
     else if (data === 'admin_create_backup') {
       await adminHandler.createBackup(ctx);
     }
+    // Settings handlers
+    else if (data === 'admin_points_settings') {
+      await adminHandler.showPointsSettings(ctx);
+    }
+    else if (data === 'admin_loyalty_settings') {
+      await adminHandler.showLoyaltySettings(ctx);
+    }
+    else if (data === 'admin_bot_settings') {
+      await adminHandler.showBotSettings(ctx);
+    }
+    // Toggle settings
+    else if (data === 'admin_toggle_balance_notifications') {
+      await adminHandler.toggleSetting(ctx, 'balanceNotifications');
+    }
+    else if (data === 'admin_toggle_auto_notifications') {
+      await adminHandler.toggleSetting(ctx, 'autoNotifications');
+    }
+    else if (data === 'admin_toggle_collect_stats') {
+      await adminHandler.toggleSetting(ctx, 'collectStats');
+    }
+    else if (data === 'admin_toggle_debug_mode') {
+      await adminHandler.toggleSetting(ctx, 'debugMode');
+    }
+    // Edit numeric settings
+    else if (data === 'admin_edit_points_per_ruble') {
+      await adminHandler.startEditNumericSetting(ctx, 'pointsPerRuble');
+    }
+    else if (data === 'admin_edit_ruble_per_point') {
+      await adminHandler.startEditNumericSetting(ctx, 'rublePerPoint');
+    }
+    else if (data === 'admin_edit_max_spend') {
+      await adminHandler.startEditNumericSetting(ctx, 'maxSpendPercent');
+    }
+    else if (data === 'admin_edit_welcome_bonus') {
+      await adminHandler.startEditNumericSetting(ctx, 'welcomeBonus');
+    }
+    else if (data === 'admin_edit_birthday_bonus') {
+      await adminHandler.startEditNumericSetting(ctx, 'birthdayBonus');
+    }
+    else if (data === 'admin_edit_points_expiry') {
+      await adminHandler.startEditNumericSetting(ctx, 'pointsExpiryDays');
+    }
 
     // MANAGER CLIENT OPERATIONS
     else if (data.startsWith('manager_earn:')) {
@@ -599,6 +641,11 @@ bot.on('message', async (msg) => {
       const { ProfileHandler } = await import('./handlers/profile.handler');
       const profileHandler = new ProfileHandler(bot);
       await profileHandler.processBirthdayEdit(ctx, msg.text);
+    }
+    // ADMIN SETTINGS HANDLERS
+    else if (session.waitingFor && session.waitingFor.startsWith('edit_setting_')) {
+      const settingKey = session.waitingFor.replace('edit_setting_', '');
+      await adminHandler.processSettingInput(ctx, settingKey, msg.text);
     }
 
   } catch (error) {
