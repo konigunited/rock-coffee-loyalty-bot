@@ -445,18 +445,8 @@ export class ClientHandler {
       `Следите за новостями, акциями и специальными предложениями:`;
 
     const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [
-        { text: '📘 Facebook', url: 'https://facebook.com/rockcoffee' },
-        { text: '📷 Instagram', url: 'https://instagram.com/rockcoffee' }
-      ],
-      [
-        { text: '📺 YouTube', url: 'https://youtube.com/rockcoffee' },
-        { text: '💬 Telegram', url: 'https://t.me/rockcoffee' }
-      ],
-      [
-        { text: '🐦 Twitter', url: 'https://twitter.com/rockcoffee' },
-        { text: '🎵 TikTok', url: 'https://tiktok.com/@rockcoffee' }
-      ],
+      [{ text: '💬 Telegram', url: 'https://t.me/rock_coffee_kld' }],
+      [{ text: '📱 Другие соц.сети', url: 'https://www.instagram.com/rockcoffee.kld?utm_source=qr&igsh=NzV2Y3Z4cjNiM2ly' }],
       [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
     ];
 
