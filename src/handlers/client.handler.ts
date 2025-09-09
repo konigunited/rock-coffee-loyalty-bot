@@ -431,7 +431,7 @@ export class ClientHandler {
       `• Уютная атмосфера для работы и отдыха`;
 
     const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '🗺️ Показать на карте', url: 'https://maps.yandex.ru' }],
+      [{ text: '🗺️ Показать на карте', url: 'https://yandex.ru/maps/?text=Калининград%20улица%20Красная%204' }],
       [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
     ];
 
