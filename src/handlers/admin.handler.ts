@@ -54,7 +54,7 @@ export class AdminHandler {
           { text: '🔍 Мониторинг системы', callback_data: 'admin_monitoring' }
         ],
         [
-          { text: '💾 Резервное копирование', callback_data: 'admin_backup_restore' },
+          { text: '💾 Управление данными', callback_data: 'admin_backup_restore' },
           { text: '📝 Журнал аудита', callback_data: 'admin_audit_log' }
         ],
         [
@@ -242,6 +242,12 @@ export class AdminHandler {
 
   // Backup and restore
   async showBackupRestore(ctx: BotContext): Promise<void> {
+    // Redirect to new backup management function
+    await this.showBackupManagement(ctx);
+  }
+
+  // Legacy function for compatibility
+  async showBackupRestoreLegacy(ctx: BotContext): Promise<void> {
     if (!ctx.from || !ctx.message?.chat?.id) return;
 
     try {
@@ -940,5 +946,316 @@ export class AdminHandler {
         `❌ Ошибка: ${error.message || 'Неверный формат данных'}\n\nПопробуйте еще раз в формате:\n\`telegram_id username Имя Фамилия\``
       );
     }
+  }
+
+  // Export data functionality
+  async showDataExport(ctx: BotContext): Promise<void> {
+    const exportText = 
+      `📤 *Экспорт данных*\n\n` +
+      `Выберите тип данных для экспорта:`;
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [
+        { text: '👥 Экспорт клиентов (CSV)', callback_data: 'admin_export_clients' },
+        { text: '📊 Экспорт транзакций (CSV)', callback_data: 'admin_export_transactions' }
+      ],
+      [
+        { text: '👨‍💼 Экспорт персонала (CSV)', callback_data: 'admin_export_staff' },
+        { text: '📋 Экспорт настроек (JSON)', callback_data: 'admin_export_settings' }
+      ],
+      [
+        { text: '📦 Полный экспорт (ZIP)', callback_data: 'admin_export_full' }
+      ],
+      [{ text: '◀️ Назад', callback_data: 'admin_main_menu' }]
+    ];
+
+    await this.editOrSendMessage(ctx, exportText, keyboard);
+  }
+
+  // Export clients to CSV
+  async exportClients(ctx: BotContext): Promise<void> {
+    try {
+      const clients = await Database.query(`
+        SELECT 
+          id, card_number, full_name, phone, birth_date, email,
+          balance, total_earned, total_spent, visit_count,
+          last_visit, created_at, is_active
+        FROM clients 
+        ORDER BY created_at DESC
+      `);
+
+      if (clients.length === 0) {
+        await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Нет данных для экспорта');
+        return;
+      }
+
+      // Create CSV content
+      const csvHeader = 'ID,Номер карты,ФИО,Телефон,Дата рождения,Email,Баланс,Заработано,Потрачено,Визитов,Последний визит,Дата регистрации,Активен\n';
+      const csvData = clients.map(client => {
+        return [
+          client.id,
+          client.card_number || '',
+          client.full_name || '',
+          client.phone || '',
+          client.birth_date || '',
+          client.email || '',
+          client.balance || 0,
+          client.total_earned || 0,
+          client.total_spent || 0,
+          client.visit_count || 0,
+          client.last_visit || '',
+          client.created_at || '',
+          client.is_active ? 'Да' : 'Нет'
+        ].map(field => `"${field}"`).join(',');
+      }).join('\n');
+
+      const csvContent = csvHeader + csvData;
+      const fileName = `clients_export_${new Date().toISOString().slice(0, 10)}.csv`;
+
+      // Send as document
+      await this.bot.sendDocument(ctx.message!.chat!.id, Buffer.from(csvContent, 'utf8'), {
+        filename: fileName
+      }, {
+        caption: `✅ Экспорт клиентов завершен\n📊 Экспортировано: ${clients.length} записей`
+      });
+
+    } catch (error) {
+      console.error('Error exporting clients:', error);
+      await this.bot.sendMessage(ctx.message!.chat!.id, `❌ Ошибка экспорта: ${error.message}`);
+    }
+  }
+
+  // Export transactions to CSV
+  async exportTransactions(ctx: BotContext): Promise<void> {
+    try {
+      const transactions = await Database.query(`
+        SELECT 
+          pt.id, pt.client_id, c.full_name, c.card_number,
+          pt.operation_type, pt.points, pt.amount, pt.description,
+          pt.operator_id, u.full_name as operator_name, pt.created_at
+        FROM point_transactions pt
+        LEFT JOIN clients c ON pt.client_id = c.id
+        LEFT JOIN users u ON pt.operator_id = u.id
+        ORDER BY pt.created_at DESC
+        LIMIT 10000
+      `);
+
+      if (transactions.length === 0) {
+        await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Нет транзакций для экспорта');
+        return;
+      }
+
+      // Create CSV content
+      const csvHeader = 'ID,ID клиента,ФИО клиента,Карта,Операция,Баллы,Сумма,Описание,Оператор,Дата\n';
+      const csvData = transactions.map(tx => {
+        return [
+          tx.id,
+          tx.client_id || '',
+          tx.full_name || '',
+          tx.card_number || '',
+          tx.operation_type === 'earn' ? 'Начисление' : 'Списание',
+          tx.points || 0,
+          tx.amount || 0,
+          tx.description || '',
+          tx.operator_name || '',
+          tx.created_at || ''
+        ].map(field => `"${field}"`).join(',');
+      }).join('\n');
+
+      const csvContent = csvHeader + csvData;
+      const fileName = `transactions_export_${new Date().toISOString().slice(0, 10)}.csv`;
+
+      // Send as document
+      await this.bot.sendDocument(ctx.message!.chat!.id, Buffer.from(csvContent, 'utf8'), {
+        filename: fileName
+      }, {
+        caption: `✅ Экспорт транзакций завершен\n📊 Экспортировано: ${transactions.length} записей`
+      });
+
+    } catch (error) {
+      console.error('Error exporting transactions:', error);
+      await this.bot.sendMessage(ctx.message!.chat!.id, `❌ Ошибка экспорта: ${error.message}`);
+    }
+  }
+
+  // Import clients from CSV
+  async showDataImport(ctx: BotContext): Promise<void> {
+    const importText = 
+      `📥 *Импорт клиентов*\n\n` +
+      `📋 **Формат CSV файла:**\n` +
+      `\`ФИО,Телефон,Дата рождения,Email\`\n\n` +
+      `📝 **Пример:**\n` +
+      `\`"Иванов Иван Иванович","79001234567","1990-01-15","ivan@email.com"\`\n\n` +
+      `📤 Отправьте CSV файл для импорта клиентов`;
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [{ text: '◀️ Назад', callback_data: 'admin_main_menu' }]
+    ];
+
+    await this.editOrSendMessage(ctx, importText, keyboard);
+
+    // Set session to wait for file
+    if (ctx.session) {
+      ctx.session.waitingFor = 'import_clients_file';
+    }
+  }
+
+  // Process CSV import
+  async processImportFile(ctx: BotContext, fileContent: string): Promise<void> {
+    try {
+      const lines = fileContent.split('\n').filter(line => line.trim());
+      if (lines.length === 0) {
+        await this.bot.sendMessage(ctx.message!.chat!.id, '❌ Файл пустой');
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const fields = line.split(',').map(field => field.replace(/"/g, '').trim());
+
+        if (fields.length < 3) {
+          errorCount++;
+          errors.push(`Строка ${i + 1}: недостаточно полей`);
+          continue;
+        }
+
+        try {
+          const [fullName, phone, birthDate, email] = fields;
+          
+          // Generate card number
+          const cardNumber = await this.generateUniqueCardNumber();
+          
+          await this.clientService.create({
+            full_name: fullName,
+            phone: phone,
+            birth_date: birthDate,
+            email: email || null,
+            card_number: cardNumber,
+            balance: 0,
+            telegram_id: null
+          });
+
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          errors.push(`Строка ${i + 1}: ${error.message}`);
+        }
+      }
+
+      let resultMessage = `📊 **Результат импорта:**\n\n`;
+      resultMessage += `✅ Успешно импортировано: **${successCount}**\n`;
+      resultMessage += `❌ Ошибок: **${errorCount}**\n\n`;
+
+      if (errors.length > 0 && errors.length <= 10) {
+        resultMessage += `🚫 **Ошибки:**\n`;
+        errors.slice(0, 10).forEach(error => {
+          resultMessage += `• ${error}\n`;
+        });
+      } else if (errors.length > 10) {
+        resultMessage += `🚫 **Первые 10 ошибок:**\n`;
+        errors.slice(0, 10).forEach(error => {
+          resultMessage += `• ${error}\n`;
+        });
+        resultMessage += `\n... и еще ${errors.length - 10} ошибок`;
+      }
+
+      await this.bot.sendMessage(ctx.message!.chat!.id, resultMessage);
+
+    } catch (error) {
+      console.error('Error processing import:', error);
+      await this.bot.sendMessage(ctx.message!.chat!.id, `❌ Ошибка обработки файла: ${error.message}`);
+    }
+  }
+
+  // Generate unique card number
+  private async generateUniqueCardNumber(): Promise<string> {
+    let cardNumber: string;
+    let attempts = 0;
+    const maxAttempts = 100;
+
+    do {
+      cardNumber = Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString();
+      const existing = await Database.queryOne(
+        'SELECT id FROM clients WHERE card_number = $1',
+        [cardNumber]
+      );
+      
+      if (!existing) break;
+      attempts++;
+      
+      if (attempts >= maxAttempts) {
+        throw new Error('Не удалось сгенерировать уникальный номер карты');
+      }
+    } while (true);
+
+    return cardNumber;
+  }
+
+  // Create database backup
+  async createBackup(ctx: BotContext): Promise<void> {
+    try {
+      await this.bot.sendMessage(ctx.message!.chat!.id, '🔄 Создание резервной копии...');
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupFileName = `backup_${timestamp}.sql`;
+
+      // Create PostgreSQL backup using pg_dump
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execAsync = util.promisify(exec);
+
+      const dbConfig = {
+        host: process.env.DB_HOST || 'localhost',
+        port: process.env.DB_PORT || '5432',
+        database: process.env.DB_NAME || 'rock_coffee_bot',
+        username: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || ''
+      };
+
+      const backupCommand = `docker exec rock_coffee_db pg_dump -U ${dbConfig.username} -d ${dbConfig.database} --no-password`;
+      
+      const { stdout, stderr } = await execAsync(backupCommand);
+
+      if (stderr && !stderr.includes('Warning')) {
+        throw new Error(`Backup failed: ${stderr}`);
+      }
+
+      // Send backup as file
+      await this.bot.sendDocument(ctx.message!.chat!.id, Buffer.from(stdout, 'utf8'), {
+        filename: backupFileName
+      }, {
+        caption: `✅ **Резервная копия создана**\n📅 Дата: ${new Date().toLocaleString('ru-RU')}\n💾 Размер: ${Math.round(stdout.length / 1024)} KB`
+      });
+
+    } catch (error) {
+      console.error('Error creating backup:', error);
+      await this.bot.sendMessage(ctx.message!.chat!.id, `❌ Ошибка создания резервной копии: ${error.message}`);
+    }
+  }
+
+  // Show backup management
+  async showBackupManagement(ctx: BotContext): Promise<void> {
+    const backupText = 
+      `💾 *Управление резервными копиями*\n\n` +
+      `🔒 **Создание резервных копий:**\n` +
+      `• Полная копия базы данных\n` +
+      `• Включает всех клиентов, транзакции и настройки\n` +
+      `• Формат: PostgreSQL SQL дамп\n\n` +
+      `⚠️ **Внимание:** Создание резервной копии может занять некоторое время`;
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [{ text: '💾 Создать резервную копию', callback_data: 'admin_create_backup' }],
+      [
+        { text: '📤 Экспорт данных', callback_data: 'admin_export_data' },
+        { text: '📥 Импорт клиентов', callback_data: 'admin_import_data' }
+      ],
+      [{ text: '◀️ Назад', callback_data: 'admin_main_menu' }]
+    ];
+
+    await this.editOrSendMessage(ctx, backupText, keyboard);
   }
 }

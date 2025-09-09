@@ -375,6 +375,22 @@ bot.on('callback_query', async (callbackQuery) => {
       const userId = parseInt(data.split(':')[1]);
       await adminHandler.confirmRemoveUser(ctx, userId);
     }
+    // Import/Export/Backup handlers
+    else if (data === 'admin_export_data') {
+      await adminHandler.showDataExport(ctx);
+    }
+    else if (data === 'admin_export_clients') {
+      await adminHandler.exportClients(ctx);
+    }
+    else if (data === 'admin_export_transactions') {
+      await adminHandler.exportTransactions(ctx);
+    }
+    else if (data === 'admin_import_data') {
+      await adminHandler.showDataImport(ctx);
+    }
+    else if (data === 'admin_create_backup') {
+      await adminHandler.createBackup(ctx);
+    }
 
     // MANAGER CLIENT OPERATIONS
     else if (data.startsWith('manager_earn:')) {
@@ -588,6 +604,58 @@ bot.on('message', async (msg) => {
   } catch (error) {
     console.error('Message handler error:', error);
     await bot.sendMessage(msg.chat.id, '❌ Произошла ошибка при обработке сообщения.');
+  }
+});
+
+// Handle document uploads (for import functionality)
+bot.on('document', async (msg) => {
+  if (!msg.from || !msg.document) return;
+
+  const ctx = createBotContext(msg);
+  const session = ctx.session;
+
+  if (!session || session.waitingFor !== 'import_clients_file') return;
+
+  try {
+    // Check file type
+    const fileName = msg.document.file_name || '';
+    if (!fileName.toLowerCase().endsWith('.csv')) {
+      await bot.sendMessage(msg.chat.id, '❌ Поддерживаются только CSV файлы');
+      return;
+    }
+
+    // Check file size (max 10MB)
+    if (msg.document.file_size && msg.document.file_size > 10 * 1024 * 1024) {
+      await bot.sendMessage(msg.chat.id, '❌ Файл слишком большой (макс. 10MB)');
+      return;
+    }
+
+    // Get file from Telegram
+    const fileInfo = await bot.getFile(msg.document.file_id);
+    const fileUrl = `https://api.telegram.org/file/bot${bot.token}/${fileInfo.file_path}`;
+    
+    // Download and read file content
+    const https = require('https');
+    const fileContent = await new Promise<string>((resolve, reject) => {
+      https.get(fileUrl, (response) => {
+        let data = '';
+        response.on('data', (chunk) => data += chunk);
+        response.on('end', () => resolve(data));
+        response.on('error', reject);
+      }).on('error', reject);
+    });
+
+    // Process the imported file
+    await adminHandler.processImportFile(ctx, fileContent);
+    
+    // Clear session
+    if (ctx.session) {
+      delete ctx.session.waitingFor;
+    }
+
+  } catch (error) {
+    console.error('Document upload error:', error);
+    await bot.sendMessage(msg.chat.id, '❌ Ошибка при обработке файла');
   }
 });
 
