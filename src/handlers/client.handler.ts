@@ -476,7 +476,6 @@ export class ClientHandler {
       `Обращайтесь к нашим бариста!`;
 
     const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '📞 Связаться с поддержкой', url: 'https://t.me/rockcoffee_support' }],
       [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
     ];
 

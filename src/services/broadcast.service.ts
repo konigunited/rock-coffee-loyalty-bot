@@ -372,12 +372,17 @@ export class BroadcastService {
     }
   }
 
-  // Send birthday wishes to clients
+  // Send birthday wishes to clients - DISABLED
   async sendBirthdayWishes(): Promise<{
     success: boolean;
     sentCount: number;
     errors: string[];
   }> {
+    // Birthday auto-accrual is disabled
+    console.log('Birthday wishes function is disabled');
+    return { success: true, sentCount: 0, errors: [] };
+    
+    /* DISABLED BIRTHDAY AUTO-ACCRUAL
     try {
       // Get clients with birthdays today
       const birthdayClients = await Database.query(`
@@ -447,6 +452,7 @@ export class BroadcastService {
       console.error('Error sending birthday wishes:', error);
       return { success: false, sentCount: 0, errors: [error instanceof Error ? error.message : 'Unknown error'] };
     }
+    */
   }
 
   // Utility function to chunk array
