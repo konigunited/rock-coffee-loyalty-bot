@@ -346,8 +346,7 @@ export class ClientHandler {
         `🆔 Номер карты: \`${client.card_number}\`\n` +
         `💰 Баланс: *${client.balance} баллов*\n` +
         `📅 Последний визит: ${lastVisitText}\n` +
-        `🔢 Всего визитов: *${client.visit_count}*\n` +
-        `📊 Операций всего: *${client.total_transactions || 0}*\n\n`;
+        `🔢 Всего визитов: *${client.visit_count}*\n\n`;
 
       if (recentTransactions.length > 0) {
         cardMessage += `📊 *Последние операции:*\n`;
@@ -395,7 +394,6 @@ export class ClientHandler {
         `📱 Телефон: ${client.phone}\n` +
         `🎂 День рождения: ${birthDateText}\n` +
         `📅 Дата регистрации: ${new Date(client.created_at).toLocaleDateString('ru-RU')}\n` +
-        `📊 Всего операций: *${client.total_transactions || 0}*\n` +
         `🏆 Статус: ${this.getClientStatus(client.visit_count || 0)}`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
