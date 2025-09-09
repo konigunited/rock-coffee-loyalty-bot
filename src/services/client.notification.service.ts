@@ -2,6 +2,18 @@ import TelegramBot from 'node-telegram-bot-api';
 import Database from '../config/database';
 import { ClientService } from './client.service';
 
+// Helper function to extract first name from full name
+function getFirstName(fullName: string): string {
+  if (!fullName || typeof fullName !== 'string') return 'друг';
+  
+  // Split by spaces and return second part (first name) or first part if only one word
+  const parts = fullName.trim().split(' ');
+  if (parts.length >= 2) {
+    return parts[1]; // Return first name (Иван from "Иванов Иван Иванович")
+  }
+  return parts[0]; // Return single word if no spaces
+}
+
 export class ClientNotificationService {
   private bot: TelegramBot;
   private clientService: ClientService;
@@ -87,7 +99,7 @@ export class ClientNotificationService {
         return;
       }
 
-      const firstName = clientWithTelegram.full_name.split(' ')[0];
+      const firstName = getFirstName(clientWithTelegram.full_name);
       
       const message = 
         `🎉 *С днем рождения, ${firstName}!*\n\n` +
@@ -124,7 +136,7 @@ export class ClientNotificationService {
         return;
       }
 
-      const firstName = clientWithTelegram.full_name.split(' ')[0];
+      const firstName = getFirstName(clientWithTelegram.full_name);
       
       let message = 
         `🎉 *Добро пожаловать в Rock Coffee, ${firstName}!*\n\n` +
@@ -176,7 +188,7 @@ export class ClientNotificationService {
         return;
       }
 
-      const firstName = clientWithTelegram.full_name.split(' ')[0];
+      const firstName = getFirstName(clientWithTelegram.full_name);
       
       const promotionMessage = 
         `🎯 *${title}*\n\n` +
@@ -216,7 +228,7 @@ export class ClientNotificationService {
         return;
       }
 
-      const firstName = clientWithTelegram.full_name.split(' ')[0];
+      const firstName = getFirstName(clientWithTelegram.full_name);
       const daysSinceLastVisit = clientWithTelegram.last_visit 
         ? Math.floor((Date.now() - new Date(clientWithTelegram.last_visit).getTime()) / (1000 * 60 * 60 * 24))
         : null;

@@ -233,6 +233,21 @@ bot.on('callback_query', async (callbackQuery) => {
     else if (data === 'help_barista') {
       await baristaHandler.showHelp(ctx);
     }
+    else if (data === 'barista_favorites') {
+      await baristaHandler.showFavorites(ctx);
+    }
+    else if (data.startsWith('toggle_favorite:')) {
+      const clientId = parseInt(data.split(':')[1]);
+      await baristaHandler.toggleFavorite(ctx, clientId);
+    }
+    else if (data.startsWith('show_comments:')) {
+      const clientId = parseInt(data.split(':')[1]);
+      await baristaHandler.showClientComments(ctx, clientId);
+    }
+    else if (data.startsWith('add_comment:')) {
+      const clientId = parseInt(data.split(':')[1]);
+      await baristaHandler.addClientComment(ctx, clientId);
+    }
     // Manager routes
     else if (data === 'manager_menu') {
       await managerHandler.showMainMenu(ctx);
@@ -609,6 +624,10 @@ bot.on('message', async (msg) => {
     }
     else if (session.waitingFor === 'add_barista_data') {
       await adminHandler.processAddBaristaData(ctx, msg.text);
+    }
+    else if (session.waitingFor && session.waitingFor.startsWith('add_comment_')) {
+      const clientId = parseInt(session.waitingFor.replace('add_comment_', ''));
+      await baristaHandler.processCommentInput(ctx, clientId, msg.text);
     }
     // CLIENT REGISTRATION HANDLERS
     else if (session.waitingFor === 'full_name') {

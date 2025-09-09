@@ -2,6 +2,18 @@ import TelegramBot from 'node-telegram-bot-api';
 import Database from '../config/database';
 import { ClientService } from './client.service';
 
+// Helper function to extract first name from full name
+function getFirstName(fullName: string): string {
+  if (!fullName || typeof fullName !== 'string') return 'друг';
+  
+  // Split by spaces and return second part (first name) or first part if only one word
+  const parts = fullName.trim().split(' ');
+  if (parts.length >= 2) {
+    return parts[1]; // Return first name (Иван from "Иванов Иван Иванович")
+  }
+  return parts[0]; // Return single word if no spaces
+}
+
 export interface BroadcastMessage {
   id?: number;
   title: string;
@@ -206,7 +218,7 @@ export class BroadcastService {
     recipient: { client_id: number; telegram_id: number; full_name: string }
   ): Promise<void> {
     try {
-      const firstName = recipient.full_name.split(' ')[0];
+      const firstName = getFirstName(recipient.full_name);
       let personalizedMessage = broadcast.message.replace('{name}', firstName);
       
       if (broadcast.image_url) {
@@ -418,7 +430,7 @@ export class BroadcastService {
           `, [client.id, birthdayBonus]);
 
           // Send birthday message
-          const firstName = client.full_name.split(' ')[0];
+          const firstName = getFirstName(client.full_name);
           const message = 
             `🎉 **С днем рождения, ${firstName}!**\n\n` +
             `🎂 Поздравляем вас с днем рождения от всей команды Rock Coffee!\n\n` +

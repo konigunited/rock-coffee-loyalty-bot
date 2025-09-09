@@ -2,6 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { ClientService } from '../services/client.service';
 import { PointService } from '../services/point.service';
 import { UserService } from '../services/user.service';
+import { FavoritesService } from '../services/favorites.service';
 import { BotContext, getCurrentUser, checkBaristaAccess, ACCESS_DENIED_MESSAGES } from '../middleware/access.middleware';
 import { BaristaClientView } from '../types/client.types';
 import { StatsHandler } from './stats.handler';
@@ -11,6 +12,7 @@ export class BaristaHandler {
   private clientService: ClientService;
   private pointService: PointService;
   private userService: UserService;
+  private favoritesService: FavoritesService;
   private statsHandler: StatsHandler;
 
   constructor(bot: TelegramBot) {
@@ -18,7 +20,11 @@ export class BaristaHandler {
     this.clientService = new ClientService();
     this.pointService = new PointService();
     this.userService = new UserService();
+    this.favoritesService = new FavoritesService();
     this.statsHandler = new StatsHandler(bot);
+    
+    // Initialize favorites tables
+    this.favoritesService.initializeTables();
   }
 
   // Main menu for barista
@@ -29,9 +35,14 @@ export class BaristaHandler {
     }
 
     const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '🔍 Поиск клиента', callback_data: 'search_client' }],
-      [{ text: '📊 Моя статистика', callback_data: 'my_stats' }],
-      [{ text: '📝 Последние операции', callback_data: 'recent_operations' }],
+      [
+        { text: '🔍 Поиск клиента', callback_data: 'search_client' },
+        { text: '⭐ Избранные', callback_data: 'barista_favorites' }
+      ],
+      [
+        { text: '📊 Моя статистика', callback_data: 'my_stats' },
+        { text: '📝 Последние операции', callback_data: 'recent_operations' }
+      ],
       [{ text: 'ℹ️ Справка', callback_data: 'help_barista' }]
     ];
 
@@ -242,6 +253,10 @@ export class BaristaHandler {
         return;
       }
 
+      const user = getCurrentUser(ctx);
+      const isFavorite = user ? await this.favoritesService.isFavorite(user.id, clientId) : false;
+      const commentsCount = await this.favoritesService.getClientCommentsCount(clientId);
+
       const lastVisitText = client.last_visit 
         ? new Date(client.last_visit).toLocaleDateString('ru-RU', {
             day: '2-digit', 
@@ -251,21 +266,32 @@ export class BaristaHandler {
           })
         : 'Никогда';
 
+      const favoriteIcon = isFavorite ? '⭐' : '';
+      const commentsText = commentsCount > 0 ? `💬 Комментарии: ${commentsCount}` : '';
+
       const clientText = 
-        `👤 *${client.full_name}*\n` +
+        `👤 *${client.full_name}* ${favoriteIcon}\n` +
         `💳 Карта: \`${client.card_number}\`\n` +
         `💰 Баллы: *${client.balance}*\n` +
         `📅 Последний визит: ${lastVisitText}\n` +
         `🔢 Всего визитов: ${client.visit_count}\n` +
-        `📝 Заметки: ${client.notes || 'Нет'}`;
+        `📝 Заметки: ${client.notes || 'Нет'}\n` +
+        (commentsText ? `${commentsText}\n` : '');
 
+      // Mobile-optimized layout: 2 buttons per row
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [
           { text: '+1 балл', callback_data: `quick_add_one:${clientId}` },
-          { text: '➕ Начислить', callback_data: `earn_points:${clientId}` },
-          { text: '➖ Списать', callback_data: `spend_points:${clientId}` }
+          { text: '➕ Начислить', callback_data: `earn_points:${clientId}` }
         ],
-        [{ text: '📝 Добавить заметку', callback_data: `add_note:${clientId}` }],
+        [
+          { text: '➖ Списать', callback_data: `spend_points:${clientId}` },
+          { text: '📝 Заметку', callback_data: `add_note:${clientId}` }
+        ],
+        [
+          { text: isFavorite ? '💔 Из избранных' : '⭐ В избранное', callback_data: `toggle_favorite:${clientId}` },
+          { text: '💬 Комментарии', callback_data: `show_comments:${clientId}` }
+        ],
         [
           { text: '🔍 Поиск', callback_data: 'search_client' },
           { text: '🏠 Главная', callback_data: 'barista_menu' }
@@ -356,13 +382,17 @@ export class BaristaHandler {
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [
           { text: '1', callback_data: `confirm_earn:${clientId}:1` },
-          { text: '5', callback_data: `confirm_earn:${clientId}:5` },
+          { text: '5', callback_data: `confirm_earn:${clientId}:5` }
+        ],
+        [
           { text: '10', callback_data: `confirm_earn:${clientId}:10` },
           { text: '15', callback_data: `confirm_earn:${clientId}:15` }
         ],
         [
           { text: '20', callback_data: `confirm_earn:${clientId}:20` },
-          { text: '25', callback_data: `confirm_earn:${clientId}:25` },
+          { text: '25', callback_data: `confirm_earn:${clientId}:25` }
+        ],
+        [
           { text: '50', callback_data: `confirm_earn:${clientId}:50` },
           { text: '100', callback_data: `confirm_earn:${clientId}:100` }
         ],
@@ -871,6 +901,208 @@ export class BaristaHandler {
     } catch (error) {
       // If edit fails, send new message
       await this.sendMessage(ctx, text, keyboard);
+    }
+  }
+
+  // Show favorite clients
+  async showFavorites(ctx: BotContext): Promise<void> {
+    if (!await checkBaristaAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) return;
+
+      const favorites = await this.favoritesService.getFavoriteClients(user.id);
+
+      if (favorites.length === 0) {
+        const emptyText = 
+          `⭐ *Избранные клиенты*\n\n` +
+          `📝 У вас пока нет избранных клиентов.\n\n` +
+          `💡 Добавьте клиентов в избранное для быстрого доступа!`;
+
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [{ text: '🔍 Найти клиента', callback_data: 'search_client' }],
+          [{ text: '◀️ Главное меню', callback_data: 'barista_main_menu' }]
+        ];
+
+        await this.editMessage(ctx, emptyText, keyboard);
+        return;
+      }
+
+      let favoritesText = 
+        `⭐ *Избранные клиенты* (${favorites.length})\n\n`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+      
+      favorites.forEach((favorite, index) => {
+        const lastVisit = favorite.last_visit 
+          ? new Date(favorite.last_visit).toLocaleDateString('ru-RU')
+          : 'Никогда';
+
+        favoritesText += `${index + 1}. **${favorite.client_name}**\n`;
+        favoritesText += `   💳 \`${favorite.client_card}\`\n`;
+        favoritesText += `   💰 ${favorite.client_balance} баллов\n`;
+        favoritesText += `   📅 ${lastVisit}\n\n`;
+
+        // Add buttons (2 per row)
+        if (index % 2 === 0) {
+          keyboard.push([
+            { text: `${index + 1}. ${favorite.client_name}`, callback_data: `client_card:${favorite.client_id}` }
+          ]);
+        } else {
+          const lastRow = keyboard[keyboard.length - 1];
+          lastRow.push({ text: `${index + 1}. ${favorite.client_name}`, callback_data: `client_card:${favorite.client_id}` });
+        }
+      });
+
+      keyboard.push([
+        { text: '🔍 Поиск клиента', callback_data: 'search_client' },
+        { text: '◀️ Главное меню', callback_data: 'barista_main_menu' }
+      ]);
+
+      await this.editMessage(ctx, favoritesText, keyboard);
+
+    } catch (error) {
+      console.error('Error showing favorites:', error);
+      await this.sendMessage(ctx, '❌ Ошибка загрузки избранных клиентов');
+    }
+  }
+
+  // Toggle favorite status for client
+  async toggleFavorite(ctx: BotContext, clientId: number): Promise<void> {
+    if (!await checkBaristaAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) return;
+
+      const isFavorite = await this.favoritesService.isFavorite(user.id, clientId);
+
+      if (isFavorite) {
+        await this.favoritesService.removeFromFavorites(user.id, clientId);
+        await this.sendMessage(ctx, '💔 Клиент удален из избранных');
+      } else {
+        await this.favoritesService.addToFavorites(user.id, clientId);
+        await this.sendMessage(ctx, '⭐ Клиент добавлен в избранные!');
+      }
+
+      // Refresh client card to show updated favorite status
+      await this.showClientCard(ctx, clientId);
+
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      await this.sendMessage(ctx, '❌ Ошибка изменения избранного');
+    }
+  }
+
+  // Add comment to client
+  async addClientComment(ctx: BotContext, clientId: number): Promise<void> {
+    if (!await checkBaristaAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const client = await this.clientService.getForBarista(clientId);
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Клиент не найден');
+        return;
+      }
+
+      const commentText = 
+        `💬 *Добавление комментария*\n\n` +
+        `👤 Клиент: ${client.full_name}\n` +
+        `💳 Карта: \`${client.card_number}\`\n\n` +
+        `📝 Напишите комментарий о клиенте:`;
+
+      await this.sendMessage(ctx, commentText);
+
+      // Set session to wait for comment
+      if (ctx.session) {
+        ctx.session.waitingFor = `add_comment_${clientId}`;
+      }
+
+    } catch (error) {
+      console.error('Error starting add comment:', error);
+      await this.sendMessage(ctx, '❌ Ошибка добавления комментария');
+    }
+  }
+
+  // Process comment input
+  async processCommentInput(ctx: BotContext, clientId: number, comment: string): Promise<void> {
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) return;
+
+      if (comment.length > 500) {
+        await this.sendMessage(ctx, '❌ Комментарий слишком длинный (макс. 500 символов)');
+        return;
+      }
+
+      await this.favoritesService.addComment(clientId, user.id, comment);
+      
+      await this.sendMessage(ctx, '✅ Комментарий добавлен!');
+      
+      // Clear session and show client card
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+      }
+      
+      await this.showClientCard(ctx, clientId);
+
+    } catch (error) {
+      console.error('Error processing comment:', error);
+      await this.sendMessage(ctx, '❌ Ошибка сохранения комментария');
+    }
+  }
+
+  // Show client comments
+  async showClientComments(ctx: BotContext, clientId: number): Promise<void> {
+    if (!await checkBaristaAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const client = await this.clientService.getForBarista(clientId);
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Клиент не найден');
+        return;
+      }
+
+      const comments = await this.favoritesService.getClientComments(clientId);
+
+      let commentsText = 
+        `💬 *Комментарии о клиенте*\n\n` +
+        `👤 ${client.full_name}\n` +
+        `💳 \`${client.card_number}\`\n\n`;
+
+      if (comments.length === 0) {
+        commentsText += `📝 Комментариев пока нет`;
+      } else {
+        commentsText += `📝 **Комментарии (${comments.length}):**\n\n`;
+        
+        comments.forEach((comment, index) => {
+          const date = new Date(comment.created_at).toLocaleDateString('ru-RU');
+          commentsText += `${index + 1}. **${comment.author_name}** (${date})\n`;
+          commentsText += `   "${comment.comment}"\n\n`;
+        });
+      }
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '➕ Добавить комментарий', callback_data: `add_comment:${clientId}` },
+          { text: '👤 К карте клиента', callback_data: `client_card:${clientId}` }
+        ]
+      ];
+
+      await this.editMessage(ctx, commentsText, keyboard);
+
+    } catch (error) {
+      console.error('Error showing comments:', error);
+      await this.sendMessage(ctx, '❌ Ошибка загрузки комментариев');
     }
   }
 }

@@ -3,6 +3,18 @@ import { ClientService } from './client.service';
 import { UserService } from './user.service';
 import Database from '../config/database';
 
+// Helper function to extract first name from full name
+function getFirstName(fullName: string): string {
+  if (!fullName || typeof fullName !== 'string') return 'друг';
+  
+  // Split by spaces and return second part (first name) or first part if only one word
+  const parts = fullName.trim().split(' ');
+  if (parts.length >= 2) {
+    return parts[1]; // Return first name (Иван from "Иванов Иван Иванович")
+  }
+  return parts[0]; // Return single word if no spaces
+}
+
 export class NotificationService {
   private bot: TelegramBot;
   private clientService: ClientService;
@@ -99,7 +111,7 @@ export class NotificationService {
 
       let message = 
         `🎉 *Добро пожаловать в Rock Coffee!*\n\n` +
-        `👋 Привет, ${client.full_name}!\n\n` +
+        `👋 Привет, ${getFirstName(client.full_name)}!\n\n` +
         `💳 Ваша карта лояльности: \`${cardNumber}\`\n`;
 
       if (welcomeBonus > 0) {

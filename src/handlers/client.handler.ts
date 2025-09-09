@@ -5,6 +5,18 @@ import { UserService } from '../services/user.service';
 import { BotContext, getCurrentUser } from '../middleware/access.middleware';
 import { CreateClientData } from '../types/client.types';
 
+// Helper function to extract first name from full name
+function getFirstName(fullName: string): string {
+  if (!fullName || typeof fullName !== 'string') return 'друг';
+  
+  // Split by spaces and return second part (first name) or first part if only one word
+  const parts = fullName.trim().split(' ');
+  if (parts.length >= 2) {
+    return parts[1]; // Return first name (Иван from "Иванов Иван Иванович")
+  }
+  return parts[0]; // Return single word if no spaces
+}
+
 export class ClientHandler {
   private bot: TelegramBot;
   private clientService: ClientService;
@@ -275,7 +287,7 @@ export class ClientHandler {
         return;
       }
 
-      const firstName = client.full_name.split(' ')[0];
+      const firstName = getFirstName(client.full_name);
       const lastVisitText = client.last_visit 
         ? new Date(client.last_visit).toLocaleDateString('ru-RU')
         : 'Добро пожаловать впервые!';
