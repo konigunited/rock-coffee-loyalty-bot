@@ -96,6 +96,25 @@ export class ClientService {
 
   // Search for barista (limited data)
   async searchForBarista(query: string): Promise<BaristaClientView[]> {
+    // For short numeric queries (1-3 digits), search exact match first
+    const isShortNumber = /^\d{1,3}$/.test(query);
+    
+    if (isShortNumber) {
+      const exactSql = `
+        SELECT id, card_number, full_name, balance, notes, last_visit, visit_count, is_active
+        FROM barista_client_view 
+        WHERE card_number = $1
+        ORDER BY full_name
+        LIMIT 10
+      `;
+      
+      const exactResults = await Database.query(exactSql, [query]);
+      if (exactResults.length > 0) {
+        return exactResults;
+      }
+    }
+    
+    // Fall back to partial search for names and longer card numbers
     const sql = `
       SELECT id, card_number, full_name, balance, notes, last_visit, visit_count, is_active
       FROM barista_client_view 
