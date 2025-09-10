@@ -579,11 +579,13 @@ bot.on('message', async (msg) => {
   const ctx = createBotContext(msg);
   const session = ctx.session;
 
-  // Check for quick points input patterns (e.g., "12345 +15", "12345 15", "+15 12345")
+  // Check for quick points input patterns (e.g., "23 2", "23 -2", "+2 23", "-2 23")
   const quickPointsPatterns = [
-    /^\d+\s*\+\d+$/, // "12345 +15"
-    /^\d+\s+\d+$/, // "12345 15"  
-    /^\+\d+\s+\d+$/, // "+15 12345"
+    /^\d+\s*\+\d+$/, // "23 +2" (legacy)
+    /^\d+\s+\d+$/, // "23 2" (add points)  
+    /^\d+\s+-\d+$/, // "23 -2" (spend points)
+    /^\+\d+\s+\d+$/, // "+2 23" (legacy)
+    /^-\d+\s+\d+$/, // "-2 23" (spend points)
   ];
 
   const isQuickPointsInput = quickPointsPatterns.some(pattern => pattern.test(msg.text.trim()));
