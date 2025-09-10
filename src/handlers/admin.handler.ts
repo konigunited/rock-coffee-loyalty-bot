@@ -630,8 +630,8 @@ export class AdminHandler {
       const tableStats = await Database.query(`
         SELECT 
           schemaname,
-          tablename,
-          n_tup_ins + n_tup_upd + n_tup_del as total_changes
+          relname as tablename,
+          COALESCE(n_tup_ins, 0) + COALESCE(n_tup_upd, 0) + COALESCE(n_tup_del, 0) as total_changes
         FROM pg_stat_user_tables
         ORDER BY total_changes DESC
         LIMIT 5
