@@ -448,8 +448,7 @@ export class ClientHandler {
         `📱 Телефон: ${client.phone || 'Не указан'}\n` +
         `🎂 День рождения: ${birthDateText}\n` +
         `📅 Дата регистрации: ${new Date(client.created_at).toLocaleDateString('ru-RU')}\n` +
-        `🔐 Способ входа: ${authMethodText}\n` +
-        `🏆 Статус: ${this.getClientStatus(client.visit_count || 0)}`;
+        `🔐 Способ входа: ${authMethodText}`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [
@@ -709,10 +708,4 @@ export class ClientHandler {
     return '+' + digits;
   }
 
-  // Get client status based on visit count
-  private getClientStatus(visitCount: number): string {
-    if (visitCount >= 50) return '🥇 VIP клиент';
-    if (visitCount >= 11) return '🥈 Друг кофейни';
-    return '🥉 Новичок';
-  }
 }
