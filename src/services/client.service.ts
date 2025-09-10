@@ -319,13 +319,51 @@ export class ClientService {
     full_name: string;
     balance: number;
   } | null> {
-    const sql = `
-      SELECT client_id, is_new_client, card_number, full_name, balance
-      FROM find_or_create_client_by_phone($1, $2, $3, $4)
-    `;
-    
-    const result = await Database.queryOne(sql, [phone, telegramId, firstName || null, lastName || null]);
-    return result;
+    try {
+      // Сначала проверим есть ли клиент с таким телефоном
+      let client = await Database.queryOne(
+        'SELECT id, card_number, full_name, first_name, balance FROM clients WHERE phone = $1',
+        [phone]
+      );
+      
+      let isNew = false;
+      
+      if (!client) {
+        // Создать нового клиента через простую функцию
+        const newClientId = await Database.queryOne(
+          'SELECT find_or_create_client_by_phone($1, $2, $3, $4) as id',
+          [telegramId, phone, firstName || null, lastName || null]
+        );
+        
+        // Получить данные созданного клиента
+        client = await Database.queryOne(
+          'SELECT id, card_number, full_name, first_name, balance FROM clients WHERE id = $1',
+          [newClientId.id]
+        );
+        
+        isNew = true;
+      } else {
+        // Обновить telegram_id у существующего клиента
+        await Database.query(
+          'UPDATE clients SET telegram_id = $1, updated_at = NOW() WHERE id = $2',
+          [telegramId, client.id]
+        );
+      }
+      
+      if (!client) return null;
+      
+      return {
+        client_id: client.id,
+        is_new_client: isNew,
+        card_number: client.card_number,
+        full_name: client.full_name || client.first_name || '',
+        balance: client.balance
+      };
+      
+    } catch (error) {
+      console.error('Error in findOrCreateByPhone:', error);
+      return null;
+    }
   }
 
   // Update client profile (for profile completion)
