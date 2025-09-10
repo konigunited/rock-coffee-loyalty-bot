@@ -10,6 +10,7 @@ services:
       POSTGRES_DB: rock_coffee_bot
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 7R4P5T4R
+      TZ: Europe/Kaliningrad
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
@@ -42,6 +43,7 @@ services:
       DB_PASSWORD: 7R4P5T4R
       JWT_SECRET: your_jwt_secret_here
       PORT: 3000
+      TZ: Europe/Kaliningrad
     ports:
       - "3000:3000"
     volumes:
