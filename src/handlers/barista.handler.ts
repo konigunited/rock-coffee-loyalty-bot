@@ -50,36 +50,48 @@ export class BaristaHandler {
     const welcomeText = 
       `🏪 Rock Coffee - Панель бариста\n\n` +
       `Добро пожаловать, ${user?.full_name}!\n\n` +
-      `💡 *Быстрое начисление:* отправьте сообщение\n` +
-      `\`12345 +15\` для начисления 15 баллов клиенту с картой 12345\n\n` +
+      `💡 *Быстрые операции:* отправьте сообщение\n` +
+      `\`23 2\` - начислить 2 балла клиенту с картой 23\n` +
+      `\`23 -2\` - списать 2 балла у клиента с картой 23\n\n` +
       `Выберите действие:`;
 
     await this.editMessage(ctx, welcomeText, keyboard);
   }
 
-  // Quick points input - allow direct message like "12345 +15" for adding points
+  // Quick points input - allow direct message like "23 2" for adding or "23 -2" for spending points
   async handleQuickPointsInput(ctx: BotContext, text: string): Promise<void> {
     if (!await checkBaristaAccess(ctx)) {
       return;
     }
 
-    // Parse input like "12345 +15" or "12345 15" or "+15 12345"
+    // Parse input like "23 2" (add) or "23 -2" (spend) or "+2 23" or "-2 23"
     const patterns = [
-      /^(\d+)\s*\+(\d+)$/, // "12345 +15"
-      /^(\d+)\s+(\d+)$/, // "12345 15"  
-      /^\+(\d+)\s+(\d+)$/, // "+15 12345"
+      /^(\d+)\s*\+(\d+)$/, // "23 +2" (legacy support)
+      /^(\d+)\s+(\d+)$/, // "23 2" (add points)  
+      /^(\d+)\s+(-\d+)$/, // "23 -2" (spend points)
+      /^\+(\d+)\s+(\d+)$/, // "+2 23" (legacy support)
+      /^(-\d+)\s+(\d+)$/, // "-2 23" (spend points)
     ];
 
     let cardNumber: string | null = null;
     let points: number | null = null;
+    let isSpending = false;
 
     for (const pattern of patterns) {
       const match = text.trim().match(pattern);
       if (match) {
-        if (pattern === patterns[2]) { // "+15 12345" format
+        if (pattern === patterns[3]) { // "+2 23" format
           points = parseInt(match[1]);
           cardNumber = match[2];
-        } else { // "12345 +15" or "12345 15" format
+        } else if (pattern === patterns[4]) { // "-2 23" format
+          points = Math.abs(parseInt(match[1])); // Convert to positive
+          cardNumber = match[2];
+          isSpending = true;
+        } else if (pattern === patterns[2]) { // "23 -2" format
+          cardNumber = match[1];
+          points = Math.abs(parseInt(match[2])); // Convert to positive
+          isSpending = true;
+        } else { // "23 +2" or "23 2" format
           cardNumber = match[1];
           points = parseInt(match[2]);
         }
@@ -90,9 +102,9 @@ export class BaristaHandler {
     if (!cardNumber || !points || points <= 0) {
       await this.sendMessage(ctx, 
         '❌ Неправильный формат. Используйте:\n' +
-        '• `12345 +15` (карта + баллы)\n' +
-        '• `12345 15` (карта баллы)\n' +
-        '• `+15 12345` (баллы карта)'
+        '• `23 2` (карта + начислить 2 балла)\n' +
+        '• `23 -2` (карта + списать 2 балла)\n' +
+        '• `+2 23` или `-2 23` (баллы + карта)'
       );
       return;
     }
@@ -123,14 +135,35 @@ export class BaristaHandler {
 
       const client = clients[0];
 
-      // Execute direct points transaction
-      await this.pointService.earnPoints({
-        client_id: client.id,
-        operator_id: user.id,
-        amount: 0,
-        points: points,
-        comment: `Быстрое начисление ${points} баллов`
-      });
+      // Check if spending and validate balance
+      if (isSpending && client.balance < points) {
+        await this.sendMessage(ctx, 
+          `❌ Недостаточно баллов для списания!\n\n` +
+          `👤 ${client.full_name}\n` +
+          `💳 Карта: ${client.card_number}\n` +
+          `💰 Доступно: ${client.balance} баллов\n` +
+          `⭐ Запрошено: ${points} баллов`
+        );
+        return;
+      }
+
+      // Execute points transaction (earn or spend)
+      if (isSpending) {
+        await this.pointService.spendPoints({
+          client_id: client.id,
+          operator_id: user.id,
+          points: points,
+          comment: `Быстрое списание ${points} баллов`
+        });
+      } else {
+        await this.pointService.earnPoints({
+          client_id: client.id,
+          operator_id: user.id,
+          amount: 0,
+          points: points,
+          comment: `Быстрое начисление ${points} баллов`
+        });
+      }
 
       // Get updated client data
       const updatedClient = await this.clientService.getForBarista(client.id);
@@ -140,11 +173,15 @@ export class BaristaHandler {
         return;
       }
 
+      const operation = isSpending ? 'списаны' : 'начислены';
+      const operationIcon = isSpending ? '➖' : '⭐';
+      const operationSign = isSpending ? '-' : '+';
+
       const successText = 
-        `✅ *Баллы начислены!*\n\n` +
+        `✅ *Баллы ${operation}!*\n\n` +
         `👤 ${updatedClient.full_name}\n` +
         `💳 Карта: ${updatedClient.card_number}\n` +
-        `⭐ Начислено: *+${points} баллов*\n` +
+        `${operationIcon} ${isSpending ? 'Списано' : 'Начислено'}: *${operationSign}${points} баллов*\n` +
         `💰 Новый баланс: *${updatedClient.balance} баллов*`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
@@ -836,14 +873,14 @@ export class BaristaHandler {
 
     const helpText = 
       'ℹ️ *Справка для бариста*\n\n' +
-      '*Быстрое начисление баллов:*\n' +
+      '*Быстрые операции с баллами:*\n' +
       '⚡ Отправьте сообщение в формате:\n' +
-      '   • `12345 +15` - карта + баллы\n' +
-      '   • `12345 15` - карта баллы\n' +
-      '   • `+15 12345` - баллы карта\n\n' +
+      '   • `23 2` - начислить 2 балла карте 23\n' +
+      '   • `23 -2` - списать 2 балла с карты 23\n' +
+      '   • `+2 23` или `-2 23` - баллы + карта\n\n' +
       '*Основные функции:*\n' +
       '🔍 **Поиск клиента** - поиск по карте или ФИО\n' +
-      '   • Введите минимум 3 символа\n' +
+      '   • Введите минимум 1 символ\n' +
       '   • Поиск по номеру карты или имени\n\n' +
       '+1 **Быстрая кнопка** - добавить 1 балл клиенту\n' +
       '   • В карточке клиента\n' +
