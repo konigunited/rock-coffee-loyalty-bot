@@ -335,8 +335,8 @@ export class ManagerHandler {
       return;
     }
 
-    if (query.length < 3) {
-      await this.sendMessage(ctx, '⚠️ Введите минимум 3 символа для поиска');
+    if (query.length < 1) {
+      await this.sendMessage(ctx, '⚠️ Введите минимум 1 символ для поиска');
       return;
     }
 
