@@ -17,6 +17,7 @@ export interface BotContext {
     operation?: any;
     editing?: any;
     registration?: any;
+    clientData?: any;
     lastActivity?: Date;
   };
 }

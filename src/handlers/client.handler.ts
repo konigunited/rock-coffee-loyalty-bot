@@ -2,19 +2,28 @@ import TelegramBot from 'node-telegram-bot-api';
 import { ClientService } from '../services/client.service';
 import { PointService } from '../services/point.service';
 import { UserService } from '../services/user.service';
-import { BotContext, getCurrentUser } from '../middleware/access.middleware';
-import { CreateClientData } from '../types/client.types';
+import { BotContext } from '../middleware/access.middleware';
 
-// Helper function to extract first name from full name
-function getFirstName(fullName: string): string {
-  if (!fullName || typeof fullName !== 'string') return 'друг';
-  
-  // Split by spaces and return second part (first name) or first part if only one word
-  const parts = fullName.trim().split(' ');
-  if (parts.length >= 2) {
-    return parts[1]; // Return first name (Иван from "Иванов Иван Иванович")
+// Helper function to extract first name from contact
+function getFirstName(contact: TelegramBot.Contact | null, fullName?: string): string {
+  if (contact?.first_name) {
+    return contact.first_name;
   }
-  return parts[0]; // Return single word if no spaces
+  
+  if (fullName) {
+    const parts = fullName.trim().split(' ');
+    if (parts.length >= 2) {
+      return parts[1]; // Return first name (Иван from "Иванов Иван")
+    }
+    return parts[0];
+  }
+  
+  return 'Друг';
+}
+
+// Helper function to get last name from contact
+function getLastName(contact: TelegramBot.Contact | null): string | null {
+  return contact?.last_name || null;
 }
 
 export class ClientHandler {
@@ -30,14 +39,14 @@ export class ClientHandler {
     this.userService = new UserService();
   }
 
-  // Start client registration process
-  async startRegistration(ctx: BotContext): Promise<void> {
+  // Start authentication process - now simplified to just contact sharing
+  async startAuthentication(ctx: BotContext): Promise<void> {
     if (!ctx.from || !ctx.message?.chat?.id) {
       return;
     }
 
     try {
-      // Check if user is already registered
+      // Check if user is already authenticated
       const existingClient = await this.clientService.getByTelegramId(ctx.from.id);
       
       if (existingClient) {
@@ -48,135 +57,153 @@ export class ClientHandler {
       // Check if user is staff
       const staff = await this.userService.getByTelegramId(ctx.from.id);
       if (staff && ['barista', 'manager', 'admin'].includes(staff.role)) {
-        // Staff should not register as clients
         await this.bot.sendMessage(ctx.message.chat.id, 
           '👨‍💼 Вы уже зарегистрированы как сотрудник.\n\nИспользуйте команду /start для доступа к рабочей панели.'
         );
         return;
       }
 
-      const welcomeMessage = 
-        '🎉 *Добро пожаловать в Rock Coffee!*\n\n' +
-        '☕ Зарегистрируйтесь в программе лояльности и получайте баллы за каждую покупку!\n\n' +
-        '🎯 *Преимущества программы:*\n' +
-        '• Начисление баллов по усмотрению\n' +
-        '• Списание баллов по усмотрению\n' +
-        '• Бонусы в день рождения\n' +
-        '• Уведомления о специальных предложениях\n\n' +
-        '👤 *Введите ваше полное имя:*\n' +
-        'Например: Иванов Иван Иванович';
-
-      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-        [{ text: '❌ Отмена', callback_data: 'cancel_registration' }]
-      ];
-
-      await this.bot.sendMessage(ctx.message.chat.id, welcomeMessage, {
-        parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: keyboard }
-      });
-
-      // Initialize registration session
-      if (!ctx.session) {
-        ctx.session = {};
-      }
-      ctx.session.registration = {};
-      ctx.session.waitingFor = 'full_name';
+      // Show contact sharing request
+      await this.requestContact(ctx);
 
     } catch (error) {
-      console.error('Start registration error:', error);
+      console.error('Start authentication error:', error);
       await this.bot.sendMessage(ctx.message.chat.id, '❌ Произошла ошибка. Попробуйте позже.');
     }
   }
 
-  // Process full name input
-  async processFullName(ctx: BotContext, fullName: string): Promise<void> {
+  // Request contact sharing
+  private async requestContact(ctx: BotContext): Promise<void> {
     if (!ctx.message?.chat?.id) return;
 
-    // Validate full name
-    if (!this.validateFullName(fullName)) {
-      await this.bot.sendMessage(ctx.message.chat.id,
-        '❌ Пожалуйста, введите полное имя (минимум Фамилия и Имя).\n\n' +
-        'Например: Иванов Иван или Иванов Иван Иванович'
-      );
-      return;
-    }
+    const welcomeMessage = 
+      '🎉 *Добро пожаловать в Rock Coffee!*\n\n' +
+      '☕ Присоединяйтесь к программе лояльности и получайте баллы за каждую покупку!\n\n' +
+      '🎯 *Преимущества программы:*\n' +
+      '• Баллы за покупки\n' +
+      '• Скидки и специальные предложения\n' +
+      '• Бонусы в день рождения\n' +
+      '• Накопление без срока истечения\n\n' +
+      '📱 *Для входа поделитесь своим контактом:*';
 
-    if (!ctx.session?.registration) {
-      await this.startRegistration(ctx);
-      return;
-    }
+    const keyboard: TelegramBot.ReplyKeyboardMarkup = {
+      keyboard: [
+        [{ text: '📱 Поделиться контактом', request_contact: true }]
+      ],
+      one_time_keyboard: true,
+      resize_keyboard: true
+    };
 
-    ctx.session.registration.fullName = fullName.trim();
-
-    const phoneMessage = 
-      '📱 *Введите ваш номер телефона:*\n\n' +
-      'Можете отправить контакт кнопкой ниже или ввести вручную\n' +
-      'Например: +7900123456';
-
-    await this.bot.sendMessage(ctx.message.chat.id, phoneMessage, {
+    await this.bot.sendMessage(ctx.message.chat.id, welcomeMessage, {
       parse_mode: 'Markdown',
-      reply_markup: {
-        keyboard: [
-          [{ text: '📱 Поделиться контактом', request_contact: true }]
-        ],
-        one_time_keyboard: true,
-        resize_keyboard: true
-      }
+      reply_markup: keyboard
     });
 
-    ctx.session.waitingFor = 'phone';
+    // Set session to wait for contact
+    if (!ctx.session) {
+      ctx.session = {};
+    }
+    ctx.session.waitingFor = 'contact_auth';
   }
 
-  // Process phone input
-  async processPhone(ctx: BotContext, phone: string): Promise<void> {
-    if (!ctx.message?.chat?.id) return;
+  // Process contact sharing for authentication
+  async processContactAuth(ctx: BotContext, contact: TelegramBot.Contact): Promise<void> {
+    if (!ctx.message?.chat?.id || !ctx.from) return;
 
-    // Normalize phone number
-    const normalizedPhone = this.normalizePhone(phone);
-
-    if (!this.validatePhone(normalizedPhone)) {
-      await this.bot.sendMessage(ctx.message.chat.id,
-        '❌ Некорректный номер телефона.\n\n' +
-        'Введите номер в формате: +7XXXXXXXXXX или 8XXXXXXXXXX',
-        { reply_markup: { remove_keyboard: true } }
-      );
-      return;
-    }
-
-    // Check if phone is already registered
     try {
-      const existingClient = await this.clientService.getByPhone(normalizedPhone);
-      if (existingClient) {
+      // Normalize phone number
+      const normalizedPhone = this.normalizePhone(contact.phone_number);
+
+      if (!this.validatePhone(normalizedPhone)) {
         await this.bot.sendMessage(ctx.message.chat.id,
-          '❌ Этот номер телефона уже зарегистрирован в системе.\n\n' +
-          'Если это ваш номер, обратитесь к бариста для восстановления доступа.',
+          '❌ Некорректный номер телефона в контакте.\n\n' +
+          'Попробуйте поделиться контактом еще раз или обратитесь к персоналу.',
           { reply_markup: { remove_keyboard: true } }
         );
         return;
       }
+
+      // Extract names from contact
+      const firstName = getFirstName(contact);
+      const lastName = getLastName(contact);
+
+      // Find or create client using database function
+      const result = await this.clientService.findOrCreateByPhone(
+        normalizedPhone, 
+        ctx.from.id,
+        firstName,
+        lastName
+      );
+
+      if (!result) {
+        throw new Error('Failed to authenticate or create client');
+      }
+
+      const { client_id, is_new_client, card_number, full_name, balance } = result;
+
+      // Clear contact auth session
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+      }
+
+      if (is_new_client) {
+        // For new clients, ask for name after contact auth
+        await this.requestNameInput(ctx, { client_id, card_number, full_name, balance });
+      } else {
+        // For existing clients, show returning message and main menu
+        await this.showReturningClientMessage(ctx, { card_number, full_name, balance });
+        setTimeout(async () => {
+          await this.showMainMenu(ctx);
+        }, 2500);
+      }
+
     } catch (error) {
-      console.error('Phone check error:', error);
+      console.error('Process contact auth error:', error);
+      await this.bot.sendMessage(ctx.message.chat.id, 
+        '❌ Произошла ошибка при входе в систему. Попробуйте позже или обратитесь к персоналу.',
+        { reply_markup: { remove_keyboard: true } }
+      );
     }
+  }
 
-    if (!ctx.session?.registration) {
-      await this.startRegistration(ctx);
-      return;
-    }
+  // Show welcome message for new clients
+  private async showWelcomeMessage(ctx: BotContext, clientData: any): Promise<void> {
+    if (!ctx.message?.chat?.id) return;
 
-    ctx.session.registration.phone = normalizedPhone;
+    const welcomeMessage = 
+      '🎉 *Добро пожаловать в Rock Coffee!*\n\n' +
+      `👤 ${clientData.full_name}\n` +
+      `💳 Ваша карта: \`${clientData.card_number}\`\n` +
+      `💰 Приветственный бонус: *${clientData.balance} баллов*\n\n` +
+      `☕ *Как пользоваться:*\n` +
+      `• Сообщите номер карты бариста\n` +
+      `• Получайте баллы за покупки\n` +
+      `• Тратьте баллы на скидки\n\n` +
+      `🎯 Добро пожаловать в семью Rock Coffee!`;
 
-    const birthdayMessage = 
-      '🎂 *Введите дату рождения (необязательно):*\n\n' +
-      'Формат: ДД.ММ.ГГГГ\n' +
-      'Например: 15.06.1990\n\n' +
-      '💡 Нужно для поздравлений и праздничных бонусов!';
+    await this.bot.sendMessage(ctx.message.chat.id, welcomeMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: { remove_keyboard: true }
+    });
+  }
+
+  // Request name input for new clients
+  private async requestNameInput(ctx: BotContext, clientData: any): Promise<void> {
+    if (!ctx.message?.chat?.id) return;
+
+    const nameRequestMessage = 
+      '🎉 *Добро пожаловать в Rock Coffee!*\n\n' +
+      `💳 Ваша карта: \`${clientData.card_number}\`\n` +
+      `💰 Приветственный бонус: *${clientData.balance} баллов*\n\n` +
+      '👤 *Как к вам обращаться?*\n' +
+      'Введите ваше имя (одно слово):\n\n' +
+      '💡 Например: Алексей, Мария, Дмитрий';
 
     const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '⏭️ Пропустить', callback_data: 'skip_birthday' }],
-      [{ text: '❌ Отмена регистрации', callback_data: 'cancel_registration' }]
+      [{ text: '⏭️ Пропустить', callback_data: 'skip_name_input' }]
     ];
 
-    await this.bot.sendMessage(ctx.message.chat.id, birthdayMessage, {
+    await this.bot.sendMessage(ctx.message.chat.id, nameRequestMessage, {
       parse_mode: 'Markdown',
       reply_markup: { 
         inline_keyboard: keyboard,
@@ -184,95 +211,97 @@ export class ClientHandler {
       }
     });
 
-    ctx.session.waitingFor = 'birth_date';
+    // Set session to wait for name
+    if (!ctx.session) {
+      ctx.session = {};
+    }
+    ctx.session.waitingFor = 'contact_auth_name';
+    ctx.session.clientData = clientData;
   }
 
-  // Process birth date input
-  async processBirthDate(ctx: BotContext, birthDate: string): Promise<void> {
-    if (!birthDate || birthDate === 'skip') {
-      await this.completeRegistration(ctx);
+  // Process name input after contact auth
+  async processContactAuthName(ctx: BotContext, name: string): Promise<void> {
+    if (!ctx.message?.chat?.id || !ctx.from) return;
+
+    // Skip if empty
+    if (name === 'skip') {
+      await this.completeContactAuth(ctx);
       return;
     }
 
-    if (!this.validateBirthDate(birthDate)) {
-      await this.bot.sendMessage(ctx.message.chat.id!,
-        '❌ Некорректная дата рождения.\n\n' +
-        'Используйте формат: ДД.ММ.ГГГГ (например: 15.06.1990)'
+    // Validate single word name
+    if (!this.validateSingleWordName(name)) {
+      await this.bot.sendMessage(ctx.message.chat.id,
+        '❌ Пожалуйста, введите только одно слово.\n\n' +
+        '✅ Правильно: Алексей, Мария, Дмитрий\n' +
+        '❌ Неправильно: Алексей Петров, два слова'
       );
-      return;
-    }
-
-    if (!ctx.session?.registration) {
-      await this.startRegistration(ctx);
-      return;
-    }
-
-    ctx.session.registration.birthDate = birthDate;
-    await this.completeRegistration(ctx);
-  }
-
-  // Complete registration process
-  async completeRegistration(ctx: BotContext): Promise<void> {
-    if (!ctx.message?.chat?.id || !ctx.session?.registration) {
-      await this.startRegistration(ctx);
-      return;
-    }
-
-    const { fullName, phone, birthDate } = ctx.session.registration;
-
-    if (!fullName || !phone) {
-      await this.startRegistration(ctx);
       return;
     }
 
     try {
-      // Create new client
-      const clientData: CreateClientData = {
-        telegram_id: ctx.from!.id,
-        card_number: await this.clientService.generateCardNumber(),
-        full_name: fullName,
-        phone,
-        birth_date: birthDate || null
-      };
-
-      const clientId = await this.clientService.create(clientData, 0); // System created
-      const client = await this.clientService.getForBarista(clientId);
-
-      if (!client) {
-        throw new Error('Failed to create client');
-      }
-
-      const successMessage = 
-        '✅ *Регистрация успешно завершена!*\n\n' +
-        `👤 ${client.full_name}\n` +
-        `💳 Номер карты: \`${client.card_number}\`\n` +
-        `💰 Стартовый баланс: *${client.balance} баллов*\n\n` +
-        `🎯 *Как это работает:*\n` +
-        `• Баллы начисляются баристой/менеджером\n` +
-        `• Баллы списываются по вашему желанию\n` +
-        `• Получайте бонусы в день рождения\n\n` +
-        `☕ Добро пожаловать в Rock Coffee!`;
-
-      await this.bot.sendMessage(ctx.message.chat.id, successMessage, {
-        parse_mode: 'Markdown',
-        reply_markup: { remove_keyboard: true }
+      // Update client's name
+      await this.clientService.updateProfile(ctx.from.id, {
+        full_name: name.trim(),
+        first_name: name.trim()
       });
 
-      // Clear registration session
-      delete ctx.session.registration;
-      delete ctx.session.waitingFor;
-
-      // Show main menu after short delay
-      setTimeout(async () => {
-        await this.showMainMenu(ctx);
-      }, 2000);
+      await this.completeContactAuth(ctx, name.trim());
 
     } catch (error) {
-      console.error('Complete registration error:', error);
-      await this.bot.sendMessage(ctx.message.chat.id, 
-        '❌ Произошла ошибка при регистрации. Попробуйте позже или обратитесь к администратору.'
-      );
+      console.error('Process contact auth name error:', error);
+      await this.bot.sendMessage(ctx.message.chat.id, '❌ Ошибка при сохранении имени.');
     }
+  }
+
+  // Complete contact authentication flow
+  private async completeContactAuth(ctx: BotContext, name?: string): Promise<void> {
+    if (!ctx.message?.chat?.id || !ctx.session?.clientData) return;
+
+    const clientData = ctx.session.clientData;
+
+    const completionMessage = 
+      '✅ *Регистрация завершена!*\n\n' +
+      `👤 ${name || 'Друг'}\n` +
+      `💳 Карта: \`${clientData.card_number}\`\n` +
+      `💰 Баланс: *${clientData.balance} баллов*\n\n` +
+      '🎯 *Как пользоваться:*\n' +
+      '• Сообщите номер карты бариста\n' +
+      '• Получайте баллы за покупки\n' +
+      '• Тратьте баллы на скидки\n\n' +
+      '☕ Добро пожаловать в семью Rock Coffee!';
+
+    await this.bot.sendMessage(ctx.message.chat.id, completionMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: { remove_keyboard: true }
+    });
+
+    // Clear session
+    if (ctx.session) {
+      delete ctx.session.waitingFor;
+      delete ctx.session.clientData;
+    }
+
+    // Show main menu after delay
+    setTimeout(async () => {
+      await this.showMainMenu(ctx);
+    }, 2500);
+  }
+
+  // Show returning client message
+  private async showReturningClientMessage(ctx: BotContext, clientData: any): Promise<void> {
+    if (!ctx.message?.chat?.id) return;
+
+    const welcomeMessage = 
+      '👋 *С возвращением!*\n\n' +
+      `💳 Ваша карта: \`${clientData.card_number}\`\n` +
+      `💰 Баланс баллов: *${clientData.balance}*\n\n` +
+      `☕ Рады видеть вас снова в Rock Coffee!`;
+
+    await this.bot.sendMessage(ctx.message.chat.id, welcomeMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: { remove_keyboard: true }
+    });
   }
 
   // Show main client menu
@@ -283,11 +312,11 @@ export class ClientHandler {
       const client = await this.clientService.getByTelegramId(ctx.from.id);
       
       if (!client) {
-        await this.startRegistration(ctx);
+        await this.startAuthentication(ctx);
         return;
       }
 
-      const firstName = getFirstName(client.full_name);
+      const firstName = client.first_name || getFirstName(null, client.full_name);
       const lastVisitText = client.last_visit 
         ? new Date(client.last_visit).toLocaleDateString('ru-RU')
         : 'Добро пожаловать впервые!';
@@ -313,13 +342,17 @@ export class ClientHandler {
         ]
       ];
 
-      const messageOptions: TelegramBot.SendMessageOptions = {
+      // Show profile completion reminder if needed
+      if (client.auth_method === 'phone_contact' && !client.profile_completed) {
+        keyboard.unshift([
+          { text: '📝 Дополнить профиль', callback_data: 'complete_profile' }
+        ]);
+      }
+
+      await this.bot.sendMessage(ctx.message.chat.id, welcomeText, {
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: keyboard }
-      };
-
-      // Always send new message for stability
-      await this.bot.sendMessage(ctx.message.chat.id, welcomeText, messageOptions);
+      });
 
     } catch (error) {
       console.error('Show main menu error:', error);
@@ -335,7 +368,7 @@ export class ClientHandler {
       const client = await this.clientService.getByTelegramId(ctx.from.id);
       
       if (!client) {
-        await this.startRegistration(ctx);
+        await this.startAuthentication(ctx);
         return;
       }
 
@@ -376,7 +409,10 @@ export class ClientHandler {
         [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
       ];
 
-      await this.editOrSendMessage(ctx, cardMessage, keyboard);
+      await this.bot.sendMessage(ctx.message.chat.id, cardMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: keyboard }
+      });
 
     } catch (error) {
       console.error('Show loyalty card error:', error);
@@ -392,7 +428,7 @@ export class ClientHandler {
       const client = await this.clientService.getByTelegramId(ctx.from.id);
       
       if (!client) {
-        await this.startRegistration(ctx);
+        await this.startAuthentication(ctx);
         return;
       }
 
@@ -400,12 +436,19 @@ export class ClientHandler {
         ? new Date(client.birth_date).toLocaleDateString('ru-RU')
         : 'Не указана';
 
+      const authMethodText = {
+        'full_registration': 'Полная регистрация',
+        'phone_contact': 'По номеру телефона',
+        'manual': 'Вручную персоналом'
+      }[client.auth_method as string] || 'Неизвестно';
+
       const profileMessage = 
         `⚙️ *Мой профиль*\n\n` +
         `👤 ФИО: ${client.full_name}\n` +
-        `📱 Телефон: ${client.phone}\n` +
+        `📱 Телефон: ${client.phone || 'Не указан'}\n` +
         `🎂 День рождения: ${birthDateText}\n` +
         `📅 Дата регистрации: ${new Date(client.created_at).toLocaleDateString('ru-RU')}\n` +
+        `🔐 Способ входа: ${authMethodText}\n` +
         `🏆 Статус: ${this.getClientStatus(client.visit_count || 0)}`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
@@ -419,11 +462,136 @@ export class ClientHandler {
         [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
       ];
 
-      await this.editOrSendMessage(ctx, profileMessage, keyboard);
+      await this.bot.sendMessage(ctx.message.chat.id, profileMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: keyboard }
+      });
 
     } catch (error) {
       console.error('Show profile error:', error);
       await this.bot.sendMessage(ctx.message.chat.id, '❌ Ошибка при загрузке профиля.');
+    }
+  }
+
+  // Start profile completion for phone-only clients
+  async startProfileCompletion(ctx: BotContext): Promise<void> {
+    if (!ctx.message?.chat?.id) return;
+
+    const completionMessage = 
+      '📝 *Дополнение профиля*\n\n' +
+      'Вы вошли через номер телефона. Хотите дополнить профиль для получения дополнительных бонусов?\n\n' +
+      '🎂 Укажите дату рождения для праздничных бонусов!\n\n' +
+      '👤 *Введите ваше полное имя:*\n' +
+      'Например: Иванов Иван Иванович';
+
+    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+      [{ text: '⏭️ Пропустить', callback_data: 'skip_profile_completion' }],
+      [{ text: '❌ Отмена', callback_data: 'client_main_menu' }]
+    ];
+
+    await this.bot.sendMessage(ctx.message.chat.id, completionMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: keyboard, remove_keyboard: true }
+    });
+
+    if (!ctx.session) {
+      ctx.session = {};
+    }
+    ctx.session.waitingFor = 'profile_full_name';
+  }
+
+  // Process full name for profile completion
+  async processProfileFullName(ctx: BotContext, fullName: string): Promise<void> {
+    if (!ctx.message?.chat?.id || !ctx.from) return;
+
+    if (!this.validateFullName(fullName)) {
+      await this.bot.sendMessage(ctx.message.chat.id,
+        '❌ Пожалуйста, введите полное имя (минимум Фамилия и Имя).\n\n' +
+        'Например: Иванов Иван или Иванов Иван Иванович'
+      );
+      return;
+    }
+
+    try {
+      // Update client's full name and first name
+      await this.clientService.updateProfile(ctx.from.id, {
+        full_name: fullName.trim(),
+        first_name: getFirstName(null, fullName.trim())
+      });
+
+      const birthdayMessage = 
+        '🎂 *Дата рождения (необязательно):*\n\n' +
+        'Формат: ДД.ММ.ГГГГ\n' +
+        'Например: 15.06.1990\n\n' +
+        '💡 Нужно для поздравлений и праздничных бонусов!';
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '⏭️ Пропустить', callback_data: 'complete_profile_final' }],
+        [{ text: '❌ Отмена', callback_data: 'client_main_menu' }]
+      ];
+
+      await this.bot.sendMessage(ctx.message.chat.id, birthdayMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: keyboard }
+      });
+
+      if (ctx.session) {
+        ctx.session.waitingFor = 'profile_birth_date';
+      }
+
+    } catch (error) {
+      console.error('Process profile full name error:', error);
+      await this.bot.sendMessage(ctx.message.chat.id, '❌ Ошибка при обновлении профиля.');
+    }
+  }
+
+  // Process birth date for profile completion
+  async processProfileBirthDate(ctx: BotContext, birthDate: string): Promise<void> {
+    if (!birthDate || birthDate === 'skip') {
+      await this.completeProfile(ctx);
+      return;
+    }
+
+    if (!this.validateBirthDate(birthDate)) {
+      await this.bot.sendMessage(ctx.message.chat.id!,
+        '❌ Некорректная дата рождения.\n\n' +
+        'Используйте формат: ДД.ММ.ГГГГ (например: 15.06.1990)'
+      );
+      return;
+    }
+
+    await this.completeProfile(ctx, birthDate);
+  }
+
+  // Complete profile setup
+  private async completeProfile(ctx: BotContext, birthDate?: string): Promise<void> {
+    if (!ctx.from) return;
+
+    try {
+      await this.clientService.completeProfile(ctx.from.id, birthDate);
+
+      const successMessage = 
+        '✅ *Профиль дополнен!*\n\n' +
+        (birthDate ? '🎂 Не забудьте заглянуть к нам в день рождения за бонусом!\n\n' : '') +
+        '☕ Спасибо за доверие! Теперь вы получите максимум от программы лояльности.';
+
+      await this.bot.sendMessage(ctx.message.chat.id!, successMessage, {
+        parse_mode: 'Markdown'
+      });
+
+      // Clear session
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+      }
+
+      // Show updated main menu
+      setTimeout(async () => {
+        await this.showMainMenu(ctx);
+      }, 2000);
+
+    } catch (error) {
+      console.error('Complete profile error:', error);
+      await this.bot.sendMessage(ctx.message.chat.id!, '❌ Ошибка при завершении профиля.');
     }
   }
 
@@ -442,7 +610,10 @@ export class ClientHandler {
       [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
     ];
 
-    await this.editOrSendMessage(ctx, shopInfo, keyboard);
+    await this.bot.sendMessage(ctx.message.chat.id!, shopInfo, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: keyboard }
+    });
   }
 
   // Show social media links
@@ -457,7 +628,10 @@ export class ClientHandler {
       [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
     ];
 
-    await this.editOrSendMessage(ctx, socialMessage, keyboard);
+    await this.bot.sendMessage(ctx.message.chat.id!, socialMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: keyboard }
+    });
   }
 
   // Show program information
@@ -465,7 +639,7 @@ export class ClientHandler {
     const aboutMessage = 
       `ℹ️ *О программе лояльности*\n\n` +
       `💎 **Как это работает:**\n` +
-      `• Регистрируйтесь бесплатно\n` +
+      `• Поделитесь контактом для входа\n` +
       `• Получайте баллы за покупки\n` +
       `• Обменивайте баллы на напитки\n` +
       `• Накапливайте баллы без срока истечения\n\n` +
@@ -476,25 +650,9 @@ export class ClientHandler {
       [{ text: '◀️ Главная', callback_data: 'client_main_menu' }]
     ];
 
-    await this.editOrSendMessage(ctx, aboutMessage, keyboard);
-  }
-
-  // Cancel registration
-  async cancelRegistration(ctx: BotContext): Promise<void> {
-    if (!ctx.message?.chat?.id) return;
-
-    if (ctx.session) {
-      delete ctx.session.registration;
-      delete ctx.session.waitingFor;
-    }
-
-    const cancelMessage = 
-      '❌ Регистрация отменена.\n\n' +
-      'Если вы передумаете, всегда можете зарегистрироваться командой /start\n\n' +
-      'До встречи в Rock Coffee! ☕';
-
-    await this.bot.sendMessage(ctx.message.chat.id, cancelMessage, {
-      reply_markup: { remove_keyboard: true }
+    await this.bot.sendMessage(ctx.message.chat.id!, aboutMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: keyboard }
     });
   }
 
@@ -519,6 +677,23 @@ export class ClientHandler {
     return birthDate < today && year > 1900;
   }
 
+  // Validate single word name
+  private validateSingleWordName(name: string): boolean {
+    if (!name || name.trim().length === 0) return false;
+    const trimmed = name.trim();
+    
+    // Check that it's a single word (no spaces)
+    if (trimmed.includes(' ')) return false;
+    
+    // Check that it contains only letters (Russian or English)
+    if (!/^[А-Яа-яЁёA-Za-z]+$/.test(trimmed)) return false;
+    
+    // Check reasonable length
+    if (trimmed.length < 2 || trimmed.length > 20) return false;
+    
+    return true;
+  }
+
   // Normalize phone number to +7XXXXXXXXXX format
   private normalizePhone(phone: string): string {
     const digits = phone.replace(/\D/g, '');
@@ -539,22 +714,5 @@ export class ClientHandler {
     if (visitCount >= 50) return '🥇 VIP клиент';
     if (visitCount >= 11) return '🥈 Друг кофейни';
     return '🥉 Новичок';
-  }
-
-  // Helper method to edit or send message
-  private async editOrSendMessage(
-    ctx: BotContext, 
-    text: string, 
-    keyboard: TelegramBot.InlineKeyboardButton[][]
-  ): Promise<void> {
-    if (!ctx.message?.chat?.id) return;
-
-    const messageOptions: TelegramBot.SendMessageOptions = {
-      parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: keyboard }
-    };
-
-    // Always send a new message for client interactions to avoid edit conflicts
-    await this.bot.sendMessage(ctx.message.chat.id, text, messageOptions);
   }
 }

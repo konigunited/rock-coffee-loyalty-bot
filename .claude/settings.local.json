@@ -9,7 +9,10 @@
       "Bash(git push:*)",
       "Bash(grep:*)",
       "Bash(git add:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(node:*)",
+      "Bash(npm run typecheck:*)"
     ],
     "deny": [],
     "ask": []

@@ -261,25 +261,11 @@ export class ClientService {
     await Database.query(sql, [processedValue, clientId]);
   }
 
-  // Generate unique card number
+  // Generate sequential card number
   async generateCardNumber(): Promise<string> {
-    let cardNumber: string;
-    let isUnique = false;
-    let attempts = 0;
-    const maxAttempts = 100;
-    
-    while (!isUnique && attempts < maxAttempts) {
-      cardNumber = Math.floor(10000 + Math.random() * 90000).toString();
-      const existing = await this.getByCardNumber(cardNumber);
-      isUnique = !existing;
-      attempts++;
-    }
-    
-    if (!isUnique) {
-      throw new Error('Unable to generate unique card number after maximum attempts');
-    }
-    
-    return cardNumber!;
+    const sql = `SELECT generate_card_number() as card_number`;
+    const result = await Database.queryOne(sql);
+    return result.card_number;
   }
 
   // Log actions for audit trail
@@ -318,5 +304,115 @@ export class ClientService {
     if (operatorId > 0) {
       await this.logAction(operatorId, 'deactivate_client', clientId);
     }
+  }
+
+  // Find or create client by phone (for contact-based authentication)
+  async findOrCreateByPhone(
+    phone: string, 
+    telegramId: number, 
+    firstName?: string, 
+    lastName?: string
+  ): Promise<{
+    client_id: number;
+    is_new_client: boolean;
+    card_number: string;
+    full_name: string;
+    balance: number;
+  } | null> {
+    const sql = `
+      SELECT client_id, is_new_client, card_number, full_name, balance
+      FROM find_or_create_client_by_phone($1, $2, $3, $4)
+    `;
+    
+    const result = await Database.queryOne(sql, [phone, telegramId, firstName || null, lastName || null]);
+    return result;
+  }
+
+  // Update client profile (for profile completion)
+  async updateProfile(telegramId: number, data: {
+    full_name?: string;
+    first_name?: string;
+    birth_date?: string;
+  }): Promise<void> {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (data.full_name !== undefined) {
+      fields.push(`full_name = $${paramIndex++}`);
+      values.push(data.full_name);
+    }
+    if (data.first_name !== undefined) {
+      fields.push(`first_name = $${paramIndex++}`);
+      values.push(data.first_name);
+    }
+    if (data.birth_date !== undefined) {
+      fields.push(`birth_date = $${paramIndex++}`);
+      // Convert DD.MM.YYYY to YYYY-MM-DD if needed
+      if (data.birth_date && data.birth_date.includes('.')) {
+        const [day, month, year] = data.birth_date.split('.');
+        values.push(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+      } else {
+        values.push(data.birth_date);
+      }
+    }
+
+    if (fields.length === 0) {
+      return;
+    }
+
+    fields.push(`updated_at = NOW()`);
+    values.push(telegramId);
+
+    const sql = `
+      UPDATE clients 
+      SET ${fields.join(', ')}
+      WHERE telegram_id = $${paramIndex} AND is_active = true
+    `;
+    
+    await Database.query(sql, values);
+  }
+
+  // Complete profile setup (mark as completed)
+  async completeProfile(telegramId: number, birthDate?: string): Promise<void> {
+    const sql = `
+      UPDATE clients 
+      SET 
+        profile_completed = true,
+        birth_date = CASE 
+          WHEN $2 IS NOT NULL THEN $2::date 
+          ELSE birth_date 
+        END,
+        updated_at = NOW()
+      WHERE telegram_id = $1 AND is_active = true
+    `;
+    
+    let processedBirthDate = null;
+    if (birthDate && birthDate !== 'skip') {
+      // Convert DD.MM.YYYY to YYYY-MM-DD
+      if (birthDate.includes('.')) {
+        const [day, month, year] = birthDate.split('.');
+        processedBirthDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      } else {
+        processedBirthDate = birthDate;
+      }
+    }
+    
+    await Database.query(sql, [telegramId, processedBirthDate]);
+  }
+
+  // Get client with auth method information
+  async getByTelegramIdWithAuth(telegramId: number): Promise<any | null> {
+    const sql = `
+      SELECT 
+        id, telegram_id, card_number, full_name, first_name,
+        phone, birth_date, balance, total_spent, visit_count, 
+        last_visit, notes, is_active, auth_method, profile_completed,
+        created_at, updated_at
+      FROM clients
+      WHERE telegram_id = $1 AND is_active = true
+    `;
+    
+    return await Database.queryOne(sql, [telegramId]);
   }
 }

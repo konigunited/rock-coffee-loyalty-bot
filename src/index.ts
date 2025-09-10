@@ -9,7 +9,7 @@ import { ManagerHandler } from './handlers/manager.handler';
 import { AdminHandler } from './handlers/admin.handler';
 import { BotContext, checkBaristaAccess, checkManagerAccess, checkAdminAccess, getCurrentUser } from './middleware/access.middleware';
 import { UserService } from './services/user.service';
-import { ensureNotRegistered, handleClientCallbacks } from './middleware/client.middleware';
+import { ensureNotAuthenticated, handleClientCallbacks } from './middleware/client.middleware';
 
 // Load environment variables
 dotenv.config();
@@ -93,12 +93,12 @@ bot.onText(/\/start/, async (msg) => {
     } else if (await checkBaristaAccess(ctx)) {
       await baristaHandler.showMainMenu(ctx);
     } else {
-      // For regular users (potential clients), use client registration flow
-      await ensureNotRegistered(ctx, async () => {
-        // Import ClientHandler dynamically to avoid circular dependencies
+      // For regular users (potential clients), use new contact-based auth flow
+      await ensureNotAuthenticated(ctx, async () => {
+        // Import new ClientHandler dynamically to avoid circular dependencies
         const { ClientHandler } = await import('./handlers/client.handler');
         const clientHandler = new ClientHandler(bot);
-        await clientHandler.startRegistration(ctx);
+        await clientHandler.startAuthentication(ctx);
       });
       return;
     }
@@ -549,7 +549,7 @@ bot.on('callback_query', async (callbackQuery) => {
   }
 });
 
-// Contact handler
+// Contact handler - updated for new auth system
 bot.on('contact', async (msg) => {
   if (!msg.from || !msg.contact) return;
 
@@ -559,17 +559,12 @@ bot.on('contact', async (msg) => {
   if (!session || !session.waitingFor) return;
 
   try {
-    // Handle contact sharing for phone input
-    if (session.waitingFor === 'phone') {
-      const { ClientHandler } = await import('./handlers/client.handler');
-      const clientHandler = new ClientHandler(bot);
-      await clientHandler.processPhone(ctx, msg.contact.phone_number);
-    }
-    else if (session.waitingFor === 'edit_phone') {
-      const { ProfileHandler } = await import('./handlers/profile.handler');
-      const profileHandler = new ProfileHandler(bot);
-      await profileHandler.processPhoneEdit(ctx, msg.contact.phone_number);
-    }
+    // Import new contact handling
+    const { handleContactInput } = await import('./middleware/client.middleware');
+    await handleContactInput(ctx, async () => {
+      // Fallback handling if not processed by middleware
+      console.log(`Unhandled contact for state: ${session.waitingFor}`);
+    });
 
   } catch (error) {
     console.error('Contact handler error:', error);
@@ -639,22 +634,6 @@ bot.on('message', async (msg) => {
       const clientId = parseInt(session.waitingFor.replace('add_comment_', ''));
       await baristaHandler.processCommentInput(ctx, clientId, msg.text);
     }
-    // CLIENT REGISTRATION HANDLERS
-    else if (session.waitingFor === 'full_name') {
-      const { ClientHandler } = await import('./handlers/client.handler');
-      const clientHandler = new ClientHandler(bot);
-      await clientHandler.processFullName(ctx, msg.text);
-    }
-    else if (session.waitingFor === 'phone') {
-      const { ClientHandler } = await import('./handlers/client.handler');
-      const clientHandler = new ClientHandler(bot);
-      await clientHandler.processPhone(ctx, msg.text);
-    }
-    else if (session.waitingFor === 'birth_date') {
-      const { ClientHandler } = await import('./handlers/client.handler');
-      const clientHandler = new ClientHandler(bot);
-      await clientHandler.processBirthDate(ctx, msg.text);
-    }
     // PROFILE EDITING HANDLERS
     else if (session.waitingFor === 'edit_name') {
       const { ProfileHandler } = await import('./handlers/profile.handler');
@@ -675,6 +654,14 @@ bot.on('message', async (msg) => {
     else if (session.waitingFor && session.waitingFor.startsWith('edit_setting_')) {
       const settingKey = session.waitingFor.replace('edit_setting_', '');
       await adminHandler.processSettingInput(ctx, settingKey, msg.text);
+    }
+    // CLIENT AUTHENTICATION HANDLERS - use new middleware for unhandled states
+    else {
+      const { handleTextInput } = await import('./middleware/client.middleware');
+      await handleTextInput(ctx, async () => {
+        // If not handled by client middleware, log unhandled state
+        console.log(`Unhandled session state: ${session.waitingFor}`);
+      });
     }
 
   } catch (error) {

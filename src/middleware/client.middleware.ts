@@ -6,18 +6,18 @@ import { BotContext } from './access.middleware';
 const clientService = new ClientService();
 const userService = new UserService();
 
-// Check if user is registered as a client
-export async function ensureClientRegistered(ctx: BotContext, next: () => Promise<void>): Promise<void> {
+// Check if user is authenticated as a client (new contact-based system)
+export async function ensureClientAuthenticated(ctx: BotContext, next: () => Promise<void>): Promise<void> {
   if (!ctx.from) {
     return;
   }
 
   try {
-    const client = await clientService.getByTelegramId(ctx.from.id);
+    const client = await clientService.getByTelegramIdWithAuth(ctx.from.id);
     
     if (!client) {
       if (ctx.message?.chat?.id) {
-        await sendRegistrationPrompt(ctx);
+        await sendAuthenticationPrompt(ctx);
       }
       return;
     }
@@ -31,24 +31,24 @@ export async function ensureClientRegistered(ctx: BotContext, next: () => Promis
     await next();
     
   } catch (error) {
-    console.error('Client check error:', error);
+    console.error('Client authentication check error:', error);
     if (ctx.message?.chat?.id) {
       await sendErrorMessage(ctx, '❌ Произошла ошибка. Попробуйте позже.');
     }
   }
 }
 
-// Ensure user is NOT registered (for registration process)
-export async function ensureNotRegistered(ctx: BotContext, next: () => Promise<void>): Promise<void> {
+// Ensure user is NOT authenticated (for authentication process)
+export async function ensureNotAuthenticated(ctx: BotContext, next: () => Promise<void>): Promise<void> {
   if (!ctx.from) {
     return;
   }
 
   try {
     // Check if user is a client
-    const client = await clientService.getByTelegramId(ctx.from.id);
+    const client = await clientService.getByTelegramIdWithAuth(ctx.from.id);
     if (client) {
-      // User is already registered as client, show main menu
+      // User is already authenticated as client, show main menu
       const { ClientHandler } = await import('../handlers/client.handler');
       const clientHandler = new ClientHandler(ctx.bot as TelegramBot);
       await clientHandler.showMainMenu(ctx);
@@ -68,14 +68,14 @@ export async function ensureNotRegistered(ctx: BotContext, next: () => Promise<v
     await next();
     
   } catch (error) {
-    console.error('Registration check error:', error);
+    console.error('Authentication check error:', error);
     if (ctx.message?.chat?.id) {
-      await sendErrorMessage(ctx, '❌ Произошла ошибка при проверке регистрации.');
+      await sendErrorMessage(ctx, '❌ Произошла ошибка при проверке авторизации.');
     }
   }
 }
 
-// Handle text input based on current session state
+// Handle text input based on current session state (updated for new auth flow)
 export async function handleTextInput(ctx: BotContext, next: () => Promise<void>): Promise<void> {
   const { waitingFor } = ctx.session || {};
   
@@ -105,18 +105,39 @@ export async function handleTextInput(ctx: BotContext, next: () => Promise<void>
     const profileHandler = new ProfileHandler(ctx.bot as TelegramBot);
     
     switch (waitingFor) {
+      // New contact-based auth states
+      case 'contact_auth':
+        // Contact should be handled by handleContactInput, skip text
+        await next();
+        break;
+        
+      case 'contact_auth_name':
+        await clientHandler.processContactAuthName(ctx, text);
+        break;
+        
+      case 'profile_full_name':
+        await clientHandler.processProfileFullName(ctx, text);
+        break;
+        
+      case 'profile_birth_date':
+        await clientHandler.processProfileBirthDate(ctx, text);
+        break;
+        
+      // Legacy registration states (for backwards compatibility)
       case 'full_name':
-        await clientHandler.processFullName(ctx, text);
+        await clientHandler.processProfileFullName(ctx, text);
         break;
         
       case 'phone':
-        await clientHandler.processPhone(ctx, text);
+        // Redirect to contact sharing for consistency
+        await requestContactAuth(ctx);
         break;
         
       case 'birth_date':
-        await clientHandler.processBirthDate(ctx, text);
+        await clientHandler.processProfileBirthDate(ctx, text);
         break;
         
+      // Profile editing states
       case 'edit_name':
         await profileHandler.processNameEdit(ctx, text);
         break;
@@ -141,7 +162,7 @@ export async function handleTextInput(ctx: BotContext, next: () => Promise<void>
   }
 }
 
-// Handle contact sharing
+// Handle contact sharing (updated for new auth flow)
 export async function handleContactInput(ctx: BotContext, next: () => Promise<void>): Promise<void> {
   const { waitingFor } = ctx.session || {};
   
@@ -151,7 +172,7 @@ export async function handleContactInput(ctx: BotContext, next: () => Promise<vo
   }
 
   try {
-    const phoneNumber = ctx.message.contact.phone_number;
+    const contact = ctx.message.contact;
     
     const { ClientHandler } = await import('../handlers/client.handler');
     const { ProfileHandler } = await import('../handlers/profile.handler');
@@ -160,12 +181,18 @@ export async function handleContactInput(ctx: BotContext, next: () => Promise<vo
     const profileHandler = new ProfileHandler(ctx.bot as TelegramBot);
     
     switch (waitingFor) {
-      case 'phone':
-        await clientHandler.processPhone(ctx, phoneNumber);
+      case 'contact_auth':
+        await clientHandler.processContactAuth(ctx, contact);
         break;
         
+      case 'phone':
       case 'edit_phone':
-        await profileHandler.processPhoneEdit(ctx, phoneNumber);
+        // Process phone from contact
+        if (waitingFor === 'phone') {
+          await clientHandler.processContactAuth(ctx, contact);
+        } else {
+          await profileHandler.processPhoneEdit(ctx, contact.phone_number);
+        }
         break;
         
       default:
@@ -183,7 +210,7 @@ export async function handleContactInput(ctx: BotContext, next: () => Promise<vo
 // Validate client access to specific resource
 export async function validateClientAccess(ctx: BotContext, next: () => Promise<void>): Promise<void> {
   if (!ctx.session?.client) {
-    await ensureClientRegistered(ctx, next);
+    await ensureClientAuthenticated(ctx, next);
     return;
   }
 
@@ -193,7 +220,7 @@ export async function validateClientAccess(ctx: BotContext, next: () => Promise<
   await next();
 }
 
-// Handle callback queries for client-specific actions
+// Handle callback queries for client-specific actions (updated for new auth)
 export async function handleClientCallbacks(ctx: BotContext, callbackData: string): Promise<boolean> {
   if (!ctx.from) {
     return false;
@@ -233,13 +260,31 @@ export async function handleClientCallbacks(ctx: BotContext, callbackData: strin
         await clientHandler.showAboutProgram(ctx);
         return true;
         
-      // Registration callbacks
+      // New contact-based auth callbacks
+      case 'complete_profile':
+        await clientHandler.startProfileCompletion(ctx);
+        return true;
+        
+      case 'skip_profile_completion':
+        await clientHandler.showMainMenu(ctx);
+        return true;
+        
+      case 'complete_profile_final':
+        await clientHandler.processProfileBirthDate(ctx, 'skip');
+        return true;
+        
+      // Contact auth name callbacks
+      case 'skip_name_input':
+        await clientHandler.processContactAuthName(ctx, 'skip');
+        return true;
+        
+      // Legacy registration callbacks (for backwards compatibility)
       case 'cancel_registration':
-        await clientHandler.cancelRegistration(ctx);
+        await clientHandler.showMainMenu(ctx);
         return true;
         
       case 'skip_birthday':
-        await clientHandler.processBirthDate(ctx, 'skip');
+        await clientHandler.processProfileBirthDate(ctx, 'skip');
         return true;
         
       // Profile editing callbacks
@@ -287,20 +332,38 @@ export function cleanupExpiredSessions(sessions: Map<number, any>): void {
   }
 }
 
-// Helper function to send registration prompt
-async function sendRegistrationPrompt(ctx: BotContext): Promise<void> {
+// Helper function to send authentication prompt
+async function sendAuthenticationPrompt(ctx: BotContext): Promise<void> {
   if (!ctx.message?.chat?.id) return;
 
   const message = 
     '👋 Добро пожаловать в Rock Coffee!\n\n' +
-    '❌ Вы не зарегистрированы в программе лояльности.\n\n' +
-    '🎯 Зарегистрируйтесь и получайте:\n' +
+    '❌ Вы не авторизованы в программе лояльности.\n\n' +
+    '🎯 Авторизуйтесь и получайте:\n' +
     '• Баллы за каждую покупку\n' +
     '• Скидки и специальные предложения\n' +
     '• Бонусы в день рождения\n\n' +
-    '▶️ Нажмите /start для регистрации';
+    '▶️ Нажмите /start для входа через контакт';
 
   await (ctx.bot as TelegramBot).sendMessage(ctx.message.chat.id, message);
+}
+
+// Helper function to request contact auth
+async function requestContactAuth(ctx: BotContext): Promise<void> {
+  if (!ctx.message?.chat?.id) return;
+
+  const message = 
+    '📱 *Для безопасности используйте авторизацию через контакт*\n\n' +
+    'Нажмите /start и поделитесь контактом для входа в систему.';
+
+  await (ctx.bot as TelegramBot).sendMessage(ctx.message.chat.id, message, {
+    parse_mode: 'Markdown'
+  });
+
+  // Clear session
+  if (ctx.session) {
+    delete ctx.session.waitingFor;
+  }
 }
 
 // Helper function to send staff message

@@ -9,6 +9,7 @@
     "dev:js": "node scripts/run-js.js",
     "build": "tsc --skipLibCheck",
     "migrate": "ts-node --transpile-only scripts/migrate.ts",
+    "migrate-phone-auth": "ts-node --transpile-only scripts/migrate-to-phone-auth.ts",
     "quick-start": "ts-node --transpile-only --ignore-diagnostics src/index.ts",
     "test": "jest --detectOpenHandles --forceExit",
     "test:watch": "jest --watch --detectOpenHandles",
