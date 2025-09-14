@@ -360,6 +360,12 @@ bot.on('callback_query', async (callbackQuery) => {
       const points = parseInt(parts[2]);
       await managerHandler.managerQuickAddPoints(ctx, clientId, points);
     }
+    else if (data.startsWith('manager_quick_spend:')) {
+      const parts = data.split(':');
+      const clientId = parseInt(parts[1]);
+      const points = parseInt(parts[2]);
+      await managerHandler.managerQuickSpendPoints(ctx, clientId, points);
+    }
     else if (data === 'broadcast_all') {
       await managerHandler.showBroadcastAll(ctx);
     }

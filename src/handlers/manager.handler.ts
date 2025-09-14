@@ -143,6 +143,11 @@ export class ManagerHandler {
           { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
         ],
         [
+          { text: '-1', callback_data: `manager_quick_spend:${clientId}:1` },
+          { text: '-5', callback_data: `manager_quick_spend:${clientId}:5` },
+          { text: '-10', callback_data: `manager_quick_spend:${clientId}:10` }
+        ],
+        [
           { text: '➕ Начислить', callback_data: `manager_earn:${clientId}` },
           { text: '➖ Списать', callback_data: `manager_spend:${clientId}` }
         ],
@@ -2317,6 +2322,11 @@ export class ManagerHandler {
           { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
         ],
         [
+          { text: '-1', callback_data: `manager_quick_spend:${clientId}:1` },
+          { text: '-5', callback_data: `manager_quick_spend:${clientId}:5` },
+          { text: '-10', callback_data: `manager_quick_spend:${clientId}:10` }
+        ],
+        [
           { text: '👤 К клиенту', callback_data: `manager_client:${clientId}` },
           { text: '🔍 Новый поиск', callback_data: 'search_client_full' }
         ],
@@ -2328,6 +2338,96 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Manager quick add points error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при начислении баллов');
+    }
+  }
+
+  // Quick spend points (manager version)
+  async managerQuickSpendPoints(ctx: BotContext, clientId: number, points: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      return;
+    }
+
+    try {
+      // Get current client data to check balance
+      const client = await this.clientService.getForManager(clientId);
+
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Клиент не найден');
+        return;
+      }
+
+      // Check if client has enough balance
+      if (client.balance < points) {
+        const errorText = 
+          `❌ *Недостаточно баллов для списания!*\n\n` +
+          `👤 Клиент: ${client.full_name}\n` +
+          `💰 Текущий баланс: *${client.balance} баллов*\n` +
+          `🚫 Требуется: *${points} баллов*`;
+
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [{ text: '👤 К клиенту', callback_data: `manager_client:${clientId}` }]
+        ];
+
+        await this.editMessage(ctx, errorText, keyboard);
+        return;
+      }
+
+      // Execute points spend transaction
+      await this.pointService.spendPoints({
+        client_id: clientId,
+        operator_id: user.id,
+        amount: 0,
+        points: points,
+        comment: `Быстрое списание ${points} балл(ов) управляющим`
+      });
+
+      // Get updated client data
+      const updatedClient = await this.clientService.getForManager(clientId);
+
+      if (!updatedClient) {
+        await this.sendMessage(ctx, '❌ Ошибка при обновлении данных клиента');
+        return;
+      }
+
+      const successText = 
+        `✅ *-${points} балл(ов) списано!*\n\n` +
+        `👤 Клиент: ${updatedClient.full_name}\n` +
+        `💰 Новый баланс: *${updatedClient.balance} баллов*\n` +
+        `📅 ${new Date().toLocaleDateString('ru-RU', { 
+          day: '2-digit', 
+          month: '2-digit', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })}`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '+1', callback_data: `manager_quick_add:${clientId}:1` },
+          { text: '+5', callback_data: `manager_quick_add:${clientId}:5` },
+          { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
+        ],
+        [
+          { text: '-1', callback_data: `manager_quick_spend:${clientId}:1` },
+          { text: '-5', callback_data: `manager_quick_spend:${clientId}:5` },
+          { text: '-10', callback_data: `manager_quick_spend:${clientId}:10` }
+        ],
+        [
+          { text: '👤 К клиенту', callback_data: `manager_client:${clientId}` },
+          { text: '🔍 Новый поиск', callback_data: 'search_client_full' }
+        ],
+        [{ text: '🏠 Главное меню', callback_data: 'manager_menu' }]
+      ];
+
+      await this.editMessage(ctx, successText, keyboard);
+
+    } catch (error) {
+      console.error('Manager quick spend points error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при списании баллов');
     }
   }
 }
