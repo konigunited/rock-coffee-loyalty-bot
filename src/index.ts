@@ -354,6 +354,12 @@ bot.on('callback_query', async (callbackQuery) => {
     else if (data === 'staff_performance_today') {
       await managerHandler.showStaffPerformanceToday(ctx);
     }
+    else if (data.startsWith('manager_quick_add:')) {
+      const parts = data.split(':');
+      const clientId = parseInt(parts[1]);
+      const points = parseInt(parts[2]);
+      await managerHandler.managerQuickAddPoints(ctx, clientId, points);
+    }
     else if (data === 'broadcast_all') {
       await managerHandler.showBroadcastAll(ctx);
     }

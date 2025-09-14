@@ -138,6 +138,11 @@ export class ManagerHandler {
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [
+          { text: '+1', callback_data: `manager_quick_add:${clientId}:1` },
+          { text: '+5', callback_data: `manager_quick_add:${clientId}:5` },
+          { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
+        ],
+        [
           { text: '➕ Начислить', callback_data: `manager_earn:${clientId}` },
           { text: '➖ Списать', callback_data: `manager_spend:${clientId}` }
         ],
@@ -2262,6 +2267,67 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Staff performance today error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при загрузке статистики персонала');
+    }
+  }
+
+  // Quick add points (manager version)
+  async managerQuickAddPoints(ctx: BotContext, clientId: number, points: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      return;
+    }
+
+    try {
+      // Execute direct points transaction
+      await this.pointService.earnPoints({
+        client_id: clientId,
+        operator_id: user.id,
+        amount: 0,
+        points: points,
+        comment: `Быстрое начисление ${points} балл(ов) управляющим`
+      });
+
+      // Get updated client data
+      const client = await this.clientService.getForManager(clientId);
+
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Ошибка при обновлении данных клиента');
+        return;
+      }
+
+      const successText = 
+        `✅ *+${points} балл(ов) добавлено!*\n\n` +
+        `👤 Клиент: ${client.full_name}\n` +
+        `💰 Новый баланс: *${client.balance} баллов*\n` +
+        `📅 ${new Date().toLocaleDateString('ru-RU', { 
+          day: '2-digit', 
+          month: '2-digit', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })}`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '+1', callback_data: `manager_quick_add:${clientId}:1` },
+          { text: '+5', callback_data: `manager_quick_add:${clientId}:5` },
+          { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
+        ],
+        [
+          { text: '👤 К клиенту', callback_data: `manager_client:${clientId}` },
+          { text: '🔍 Новый поиск', callback_data: 'search_client_full' }
+        ],
+        [{ text: '🏠 Главное меню', callback_data: 'manager_menu' }]
+      ];
+
+      await this.editMessage(ctx, successText, keyboard);
+
+    } catch (error) {
+      console.error('Manager quick add points error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при начислении баллов');
     }
   }
 }
