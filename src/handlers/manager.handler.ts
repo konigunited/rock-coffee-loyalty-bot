@@ -2555,7 +2555,6 @@ export class ManagerHandler {
       await this.pointService.spendPoints({
         client_id: clientId,
         operator_id: user.id,
-        amount: 0,
         points: points,
         comment: `Быстрое списание ${points} балл(ов) управляющим`
       });
@@ -2691,7 +2690,6 @@ export class ManagerHandler {
         await this.pointService.spendPoints({
           client_id: client.id,
           operator_id: user.id,
-          amount: 0,
           points: points,
           comment: `Быстрое списание ${points} балл(ов) управляющим`
         });
