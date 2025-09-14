@@ -2430,4 +2430,130 @@ export class ManagerHandler {
       await this.sendMessage(ctx, '❌ Ошибка при списании баллов');
     }
   }
+
+  // Quick points input for managers - allow direct message like "23 2" or "23 -4"
+  async handleQuickPointsInput(ctx: BotContext, text: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    // Parse input like "23 2" (add) or "23 -4" (spend) or "+2 23" or "-4 23"
+    const patterns = [
+      /^(\d+)\s*\+(\d+)$/, // "23 +2" (legacy support)
+      /^(\d+)\s+(\d+)$/, // "23 2" (add points)  
+      /^(\d+)\s+(-\d+)$/, // "23 -4" (spend points)
+      /^\+(\d+)\s+(\d+)$/, // "+2 23" (legacy support)
+      /^(-\d+)\s+(\d+)$/, // "-4 23" (spend points)
+    ];
+
+    let cardNumber: string | null = null;
+    let points: number | null = null;
+    let isSpending = false;
+
+    for (const pattern of patterns) {
+      const match = text.trim().match(pattern);
+      if (match) {
+        if (pattern === patterns[3]) { // "+2 23" format
+          points = parseInt(match[1]);
+          cardNumber = match[2];
+        } else if (pattern === patterns[4]) { // "-4 23" format
+          points = Math.abs(parseInt(match[1])); // Convert to positive
+          cardNumber = match[2];
+          isSpending = true;
+        } else if (pattern === patterns[2]) { // "23 -4" format
+          cardNumber = match[1];
+          points = Math.abs(parseInt(match[2])); // Convert to positive
+          isSpending = true;
+        } else { // "23 +2" or "23 2" format
+          cardNumber = match[1];
+          points = parseInt(match[2]);
+        }
+        break;
+      }
+    }
+
+    if (!cardNumber || !points || points <= 0) {
+      await this.sendMessage(ctx, 
+        '❌ Неправильный формат. Используйте:\n' +
+        '• `23 2` (карта + начислить 2 балла)\n' +
+        '• `23 -4` (карта + списать 4 балла)\n' +
+        '• `+2 23` или `-4 23` (баллы + карта)'
+      );
+      return;
+    }
+
+    if (points > 1000) {
+      await this.sendMessage(ctx, '⚠️ Слишком много баллов. Максимум: 1000');
+      return;
+    }
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      return;
+    }
+
+    try {
+      // Find client by card number
+      const client = await this.clientService.getByCardNumber(cardNumber);
+      
+      if (!client) {
+        await this.sendMessage(ctx, `❌ Клиент с картой \`${cardNumber}\` не найден`);
+        return;
+      }
+
+      if (isSpending) {
+        // Check balance for spending
+        if (client.balance < points) {
+          await this.sendMessage(ctx, 
+            `❌ *Недостаточно баллов!*\n\n` +
+            `👤 ${client.full_name} (💳 ${cardNumber})\n` +
+            `💰 Баланс: ${client.balance} б.\n` +
+            `🚫 Требуется: ${points} б.`
+          );
+          return;
+        }
+
+        // Spend points
+        await this.pointService.spendPoints({
+          client_id: client.id,
+          operator_id: user.id,
+          amount: 0,
+          points: points,
+          comment: `Быстрое списание ${points} балл(ов) управляющим`
+        });
+
+        // Get updated balance
+        const updatedClient = await this.clientService.getByCardNumber(cardNumber);
+        
+        await this.sendMessage(ctx, 
+          `✅ *-${points} балл(ов) списано!*\n\n` +
+          `👤 ${client.full_name} (💳 ${cardNumber})\n` +
+          `💰 Новый баланс: *${updatedClient?.balance || 0} баллов*`
+        );
+
+      } else {
+        // Add points
+        await this.pointService.earnPoints({
+          client_id: client.id,
+          operator_id: user.id,
+          amount: 0,
+          points: points,
+          comment: `Быстрое начисление ${points} балл(ов) управляющим`
+        });
+
+        // Get updated balance
+        const updatedClient = await this.clientService.getByCardNumber(cardNumber);
+        
+        await this.sendMessage(ctx, 
+          `✅ *+${points} балл(ов) добавлено!*\n\n` +
+          `👤 ${client.full_name} (💳 ${cardNumber})\n` +
+          `💰 Новый баланс: *${updatedClient?.balance || 0} баллов*`
+        );
+      }
+
+    } catch (error) {
+      console.error('Manager quick points error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при обработке операции');
+    }
+  }
 }

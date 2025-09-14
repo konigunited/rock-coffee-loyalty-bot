@@ -617,9 +617,11 @@ bot.on('message', async (msg) => {
   const isQuickPointsInput = quickPointsPatterns.some(pattern => pattern.test(msg.text.trim()));
   
   if (isQuickPointsInput) {
-    // Handle quick points input for baristas
+    // Handle quick points input for baristas and managers
     if (await checkBaristaAccess(ctx)) {
       await baristaHandler.handleQuickPointsInput(ctx, msg.text);
+    } else if (await checkManagerAccess(ctx)) {
+      await managerHandler.handleQuickPointsInput(ctx, msg.text);
     }
     return;
   }
