@@ -12,7 +12,8 @@
       "Bash(wc:*)",
       "Bash(find:*)",
       "Bash(node:*)",
-      "Bash(npm run typecheck:*)"
+      "Bash(npm run typecheck:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []
