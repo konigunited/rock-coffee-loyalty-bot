@@ -22,7 +22,8 @@ export class ClientService {
         FROM barista_client_view 
         WHERE 
           card_number ILIKE $1 OR 
-          full_name ILIKE $2
+          full_name ILIKE $2 OR
+          notes ILIKE $1
         ORDER BY full_name
         LIMIT 10
       `;
@@ -34,7 +35,8 @@ export class ClientService {
         WHERE 
           card_number ILIKE $1 OR 
           full_name ILIKE $2 OR
-          phone ILIKE $1
+          phone ILIKE $1 OR
+          notes ILIKE $1
         ORDER BY full_name
         LIMIT 10
       `;
@@ -120,7 +122,8 @@ export class ClientService {
       FROM barista_client_view 
       WHERE 
         card_number ILIKE $1 OR 
-        full_name ILIKE $2
+  full_name ILIKE $2 OR
+  notes ILIKE $1
       ORDER BY full_name
       LIMIT 10
     `;
@@ -154,8 +157,9 @@ export class ClientService {
       FROM manager_client_view 
       WHERE 
         card_number ILIKE $1 OR 
-        full_name ILIKE $2 OR
-        phone ILIKE $1
+  full_name ILIKE $2 OR
+  phone ILIKE $1 OR
+  notes ILIKE $1
       ORDER BY full_name
       LIMIT 10
     `;
