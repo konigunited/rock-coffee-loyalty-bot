@@ -598,7 +598,18 @@ export class ManagerHandler {
       }
 
       // Soft-delete by setting is_active=false and a hidden flag
+      // Additionally anonymize personal data to simulate permanent deletion while preserving FK integrity
       await this.userService.deactivate(staffId);
+
+      const anonName = `Удалённый сотрудник ${staffId}`;
+      try {
+        await Database.query(
+          `UPDATE users SET username = NULL, telegram_id = NULL, full_name = $1, is_active = false WHERE id = $2`,
+          [anonName, staffId]
+        );
+      } catch (e) {
+        // If update fails for any reason, ignore - user is already deactivated
+      }
 
       // Additionally mark as hidden in a separate field if schema supports it (safe fallback)
       try {
@@ -607,7 +618,7 @@ export class ManagerHandler {
         // Ignore if column doesn't exist
       }
 
-      await this.sendMessage(ctx, '✅ Сотрудник удалён и больше не отображается в списках');
+      await this.sendMessage(ctx, '✅ Сотрудник удалён (анонимизирован) и больше не отображается в списках');
       await this.showAllStaff(ctx);
 
     } catch (error) {
@@ -2063,7 +2074,25 @@ export class ManagerHandler {
         [{ text: '🏠 Главная', callback_data: 'manager_menu' }]
       ];
 
-      await this.editMessage(ctx, successText, keyboard);
+      // Add quick link to manager's profile and menu
+      const profileKeyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '+1', callback_data: `manager_quick_add:${clientId}:1` },
+          { text: '+5', callback_data: `manager_quick_add:${clientId}:5` },
+          { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
+        ],
+        [
+          { text: '-1', callback_data: `manager_quick_spend:${clientId}:1` },
+          { text: '-5', callback_data: `manager_quick_spend:${clientId}:5` },
+          { text: '-10', callback_data: `manager_quick_spend:${clientId}:10` }
+        ],
+        [
+          { text: '👤 К профилю', callback_data: `staff_profile:${user.id}` },
+          { text: '🏠 Главное меню', callback_data: 'manager_menu' }
+        ]
+      ];
+
+      await this.editMessage(ctx, successText, profileKeyboard);
 
       // Clear session
       if (ctx.session) {
@@ -2671,7 +2700,25 @@ export class ManagerHandler {
         [{ text: '🏠 Главное меню', callback_data: 'manager_menu' }]
       ];
 
-      await this.editMessage(ctx, successText, keyboard);
+      // Add quick link to manager's profile and menu
+      const profileKeyboard2: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '+1', callback_data: `manager_quick_add:${clientId}:1` },
+          { text: '+5', callback_data: `manager_quick_add:${clientId}:5` },
+          { text: '+10', callback_data: `manager_quick_add:${clientId}:10` }
+        ],
+        [
+          { text: '-1', callback_data: `manager_quick_spend:${clientId}:1` },
+          { text: '-5', callback_data: `manager_quick_spend:${clientId}:5` },
+          { text: '-10', callback_data: `manager_quick_spend:${clientId}:10` }
+        ],
+        [
+          { text: '👤 К профилю', callback_data: `staff_profile:${user.id}` },
+          { text: '🏠 Главное меню', callback_data: 'manager_menu' }
+        ]
+      ];
+
+      await this.editMessage(ctx, successText, profileKeyboard2);
 
     } catch (error) {
       console.error('Manager quick add points error:', error);
