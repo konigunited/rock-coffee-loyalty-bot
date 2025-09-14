@@ -292,6 +292,16 @@ bot.on('callback_query', async (callbackQuery) => {
       const newRole = parts[2] as any;
       await managerHandler.changeStaffRole(ctx, staffId, newRole);
     }
+    else if (data.startsWith('edit_staff:')) {
+      const staffId = parseInt(data.split(':')[1]);
+      await managerHandler.editStaff(ctx, staffId);
+    }
+    else if (data.startsWith('edit_staff_field:')) {
+      const parts = data.split(':');
+      const staffId = parseInt(parts[1]);
+      const field = parts[2];
+      await managerHandler.askEditStaffField(ctx, staffId, field);
+    }
     else if (data === 'manager_statistics') {
       await managerHandler.showManagerStatistics(ctx);
     }
@@ -705,6 +715,15 @@ bot.on('message', async (msg) => {
         // If not handled by client middleware, log unhandled state
         console.log(`Unhandled session state: ${session.waitingFor}`);
       });
+    }
+
+    // Manager editing staff field (session)
+    if (session.waitingFor && session.waitingFor.startsWith('edit_staff_field:')) {
+      const parts = session.waitingFor.split(':');
+      const staffId = parseInt(parts[1]);
+      const field = parts[2];
+      await managerHandler.processEditStaffField(ctx, staffId, field, msg.text.trim());
+      return;
     }
 
   } catch (error) {

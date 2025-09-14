@@ -440,11 +440,11 @@ export class ManagerHandler {
         ]
       ];
 
-      // Add role change option for managers managing other managers
+      // Add role change option only for admins (prevent managers demoting other managers)
       const user = getCurrentUser(ctx);
       if (user && staff.role === 'manager') {
         const currentUser = await this.userService.getById(user.id);
-        if (currentUser?.role === 'manager' || currentUser?.role === 'admin') {
+        if (currentUser?.role === 'admin') {
           keyboard.push([
             { text: '☕ Перевести в бариста', callback_data: `change_role:${staffId}:barista` }
           ]);
@@ -458,6 +458,105 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Staff profile error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при загрузке профиля сотрудника');
+    }
+  }
+
+  // Show edit options for a staff member (allow managers to edit baristas)
+  async editStaff(ctx: BotContext, staffId: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) return;
+
+    try {
+      const staff = await this.staffService.getStaffDetails(staffId);
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '👤 ФИО', callback_data: `edit_staff_field:${staffId}:full_name` },
+          { text: '🔗 Username', callback_data: `edit_staff_field:${staffId}:username` }
+        ],
+        [
+          { text: staff.is_active ? '❌ Деактивировать' : '✅ Активировать', callback_data: `toggle_staff:${staffId}` }
+        ],
+        [{ text: '◀️ К персоналу', callback_data: 'all_staff' }]
+      ];
+
+      const message =
+        `✏️ *Редактирование сотрудника*\n\n` +
+        `👤 ${staff.full_name}\n` +
+        `🏷️ Роль: ${staff.role}\n` +
+        `🔗 Username: ${staff.username || 'не указан'}`;
+
+      await this.editMessage(ctx, message, keyboard);
+
+    } catch (error) {
+      console.error('Edit staff error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при загрузке редактирования сотрудника');
+    }
+  }
+
+  // Prompt for editing specific staff field
+  async askEditStaffField(ctx: BotContext, staffId: number, field: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) return;
+
+    const prompts: Record<string, string> = {
+      full_name: 'Введите новое ФИО сотрудника:',
+      username: 'Введите новый Username (без @):'
+    };
+
+    const prompt = prompts[field] || 'Введите новое значение:';
+
+    // store session state for processing the next text message
+    if (!ctx.session) ctx.session = {};
+    ctx.session.waitingFor = `edit_staff_field:${staffId}:${field}`;
+
+    await this.sendMessage(ctx, prompt);
+  }
+
+  // Process submitted staff field edit
+  async processEditStaffField(ctx: BotContext, staffId: number, field: string, value: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) return;
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      await this.sendMessage(ctx, '❌ Ошибка аутентификации');
+      return;
+    }
+
+    try {
+      const staff = await this.userService.getById(staffId);
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      if (!this.userService.canManageUser(user, staff)) {
+        await this.sendMessage(ctx, '❌ Недостаточно прав для редактирования этого сотрудника');
+        return;
+      }
+
+      const updateData: any = {};
+      if (field === 'full_name') updateData.full_name = value.trim();
+      else if (field === 'username') updateData.username = value.trim().replace('@', '') || null;
+      else {
+        await this.sendMessage(ctx, '❌ Неподдерживаемое поле для редактирования');
+        return;
+      }
+
+      await this.staffService.updateStaffMember(staffId, updateData, user.id);
+
+      // Clear session state
+      if (ctx.session) delete ctx.session.waitingFor;
+
+      await this.sendMessage(ctx, '✅ Профиль сотрудника обновлен');
+      // Show updated profile
+      await this.showStaffProfile(ctx, staffId);
+
+    } catch (error) {
+      console.error('Process edit staff field error:', error);
+      await this.sendMessage(ctx, `❌ Ошибка при обновлении сотрудника: ${error}`);
     }
   }
 
