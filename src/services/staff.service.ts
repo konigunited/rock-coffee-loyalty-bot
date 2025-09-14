@@ -65,7 +65,8 @@ export class StaffService {
         SUM(CASE WHEN pt.operation_type = 'earn' THEN pt.amount ELSE 0 END) as revenue_today
       FROM users u
       LEFT JOIN point_transactions pt ON u.id = pt.operator_id
-        AND pt.created_at >= $1 AND pt.created_at <= $2
+  -- use DATE() to avoid timezone/timestamp precision issues and ensure whole-day aggregations
+  AND DATE(pt.created_at) >= DATE($1) AND DATE(pt.created_at) <= DATE($2)
         AND pt.operation_type IN ('earn', 'spend')
       WHERE u.role IN ('barista', 'manager') AND u.is_active = true
       GROUP BY u.id, u.full_name, u.role

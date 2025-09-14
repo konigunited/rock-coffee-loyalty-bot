@@ -1075,14 +1075,17 @@ export class ManagerHandler {
     }
 
     try {
+      // Compute top clients by aggregating point_transactions to avoid stale clients.total_spent
       const sql = `
-        SELECT id, card_number, full_name, balance, total_spent, visit_count
-        FROM manager_client_view
-        WHERE is_active = true
+        SELECT c.id, c.card_number, c.full_name, c.balance, COALESCE(SUM(CASE WHEN pt.operation_type = 'spend' THEN ABS(pt.points) ELSE 0 END), 0) as total_spent, c.visit_count
+        FROM clients c
+        LEFT JOIN point_transactions pt ON pt.client_id = c.id AND pt.operation_type = 'spend'
+        WHERE c.is_active = true
+        GROUP BY c.id, c.card_number, c.full_name, c.balance, c.visit_count
         ORDER BY total_spent DESC
         LIMIT 10
       `;
-      
+
       const topClients = await Database.query(sql);
 
       if (topClients.length === 0) {

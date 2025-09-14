@@ -213,8 +213,9 @@ export class PointService {
         COUNT(DISTINCT client_id) as clients_served
       FROM point_transactions
       WHERE operator_id = $1 
-        AND created_at >= $2 
-        AND created_at <= $3
+  -- Compare by DATE to avoid timezone / timestamp precision issues
+  AND DATE(created_at) >= DATE($2)
+  AND DATE(created_at) <= DATE($3)
         AND operation_type IN ('earn', 'spend')
     `;
     
@@ -291,8 +292,8 @@ export class PointService {
         COUNT(DISTINCT client_id) as unique_clients,
         COUNT(DISTINCT operator_id) as active_operators
       FROM point_transactions
-      WHERE created_at >= $1 
-        AND created_at <= $2
+      WHERE DATE(created_at) >= DATE($1) 
+        AND DATE(created_at) <= DATE($2)
         AND operation_type IN ('earn', 'spend')
     `;
     
