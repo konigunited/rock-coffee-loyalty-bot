@@ -230,19 +230,22 @@ export class UserService {
     details?: any,
     ipAddress?: string
   ): Promise<void> {
-    const sql = `
-      INSERT INTO activity_log (user_id, action, target_type, target_id, details, ip_address)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `;
-    
-    await Database.query(sql, [
-      userId,
-      action,
-      targetType || null,
-      targetId || null,
-      details ? JSON.stringify(details) : null,
-      ipAddress || null
-    ]);
+    // Try inserting including ip_address, but fall back to insert without ip_address
+    const detailsJson = details ? JSON.stringify(details) : null;
+    try {
+      const sql = `
+        INSERT INTO activity_log (user_id, action, target_type, target_id, details, ip_address)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `;
+      await Database.query(sql, [userId, action, targetType || null, targetId || null, detailsJson, ipAddress || null]);
+    } catch (err) {
+      // If column ip_address doesn't exist, fall back to inserting without it
+      const fallbackSql = `
+        INSERT INTO activity_log (user_id, action, target_type, target_id, details)
+        VALUES ($1, $2, $3, $4, $5)
+      `;
+      await Database.query(fallbackSql, [userId, action, targetType || null, targetId || null, detailsJson]);
+    }
   }
 
   // Get user activity log

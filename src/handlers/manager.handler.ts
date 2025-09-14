@@ -692,6 +692,12 @@ export class ManagerHandler {
         return;
       }
 
+      // Additional safety: only admins can change roles. Managers should not be allowed to change another user's role.
+      if (currentUser.role !== 'admin') {
+        await this.sendMessage(ctx, '❌ Только администратор может изменять роли сотрудников');
+        return;
+      }
+
       // Validate new role
       if (!['barista', 'manager'].includes(newRole)) {
         await this.sendMessage(ctx, '❌ Недопустимая роль');

@@ -112,6 +112,11 @@ export class StaffService {
       throw new Error('Insufficient permissions to update this staff member');
     }
 
+    // Extra safeguard: only admins can change roles of users. Prevent managers from changing roles.
+    if (data.role !== undefined && updater.role !== 'admin') {
+      throw new Error('Only administrators can change user roles');
+    }
+
     await this.userService.update(staffId, data);
 
     // Log the update
