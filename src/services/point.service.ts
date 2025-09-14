@@ -266,21 +266,6 @@ export class PointService {
     return await Database.query(sql, [limit]);
   }
 
-  // Get client transaction history (manager view)
-  async getClientTransactions(clientId: number, limit: number = 20): Promise<any[]> {
-    const sql = `
-      SELECT 
-        pt.*,
-        u.full_name as operator_name
-      FROM point_transactions pt
-      LEFT JOIN users u ON pt.operator_id = u.id
-      WHERE pt.client_id = $1
-      ORDER BY pt.created_at DESC
-      LIMIT $2
-    `;
-    
-    return await Database.query(sql, [clientId, limit]);
-  }
 
   // Calculate points for purchase amount (not used in free system)
   calculateEarnPoints(amount: number): number {
