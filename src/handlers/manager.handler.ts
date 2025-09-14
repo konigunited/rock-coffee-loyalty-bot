@@ -2908,10 +2908,28 @@ export class ManagerHandler {
         // Get updated balance
         const updatedClient = await this.clientService.getByCardNumber(cardNumber);
         
+        const profileKeyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [
+            { text: '+1', callback_data: `manager_quick_add:${client.id}:1` },
+            { text: '+5', callback_data: `manager_quick_add:${client.id}:5` },
+            { text: '+10', callback_data: `manager_quick_add:${client.id}:10` }
+          ],
+          [
+            { text: '-1', callback_data: `manager_quick_spend:${client.id}:1` },
+            { text: '-5', callback_data: `manager_quick_spend:${client.id}:5` },
+            { text: '-10', callback_data: `manager_quick_spend:${client.id}:10` }
+          ],
+          [
+            { text: '👤 К профилю', callback_data: `staff_profile:${user.id}` },
+            { text: '🏠 Главное меню', callback_data: 'manager_menu' }
+          ]
+        ];
+
         await this.sendMessage(ctx, 
           `✅ *-${points} балл(ов) списано!*\n\n` +
           `👤 ${client.full_name} (💳 ${cardNumber})\n` +
-          `💰 Новый баланс: *${updatedClient?.balance || 0} баллов*`
+          `💰 Новый баланс: *${updatedClient?.balance || 0} баллов*`,
+          profileKeyboard
         );
 
       } else {
@@ -2927,10 +2945,28 @@ export class ManagerHandler {
         // Get updated balance
         const updatedClient = await this.clientService.getByCardNumber(cardNumber);
         
+        const profileKeyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [
+            { text: '+1', callback_data: `manager_quick_add:${client.id}:1` },
+            { text: '+5', callback_data: `manager_quick_add:${client.id}:5` },
+            { text: '+10', callback_data: `manager_quick_add:${client.id}:10` }
+          ],
+          [
+            { text: '-1', callback_data: `manager_quick_spend:${client.id}:1` },
+            { text: '-5', callback_data: `manager_quick_spend:${client.id}:5` },
+            { text: '-10', callback_data: `manager_quick_spend:${client.id}:10` }
+          ],
+          [
+            { text: '👤 К профилю', callback_data: `staff_profile:${user.id}` },
+            { text: '🏠 Главное меню', callback_data: 'manager_menu' }
+          ]
+        ];
+
         await this.sendMessage(ctx, 
           `✅ *+${points} балл(ов) добавлено!*\n\n` +
           `👤 ${client.full_name} (💳 ${cardNumber})\n` +
-          `💰 Новый баланс: *${updatedClient?.balance || 0} баллов*`
+          `💰 Новый баланс: *${updatedClient?.balance || 0} баллов*`,
+          profileKeyboard
         );
       }
 
