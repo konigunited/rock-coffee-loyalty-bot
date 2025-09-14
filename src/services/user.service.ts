@@ -274,7 +274,18 @@ export class UserService {
     const actorLevel = this.getRoleLevel(actorUser.role);
     const targetLevel = this.getRoleLevel(targetUser.role);
     
-    return actorLevel > targetLevel;
+    // Admins can manage everyone
+    if (actorUser.role === 'admin') {
+      return true;
+    }
+    
+    // Managers can manage baristas and other managers (but not admins)
+    if (actorUser.role === 'manager') {
+      return targetUser.role === 'barista' || targetUser.role === 'manager';
+    }
+    
+    // Baristas can't manage anyone
+    return false;
   }
 
   // Alias for getByRole (for compatibility with admin handler)

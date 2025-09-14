@@ -282,6 +282,16 @@ bot.on('callback_query', async (callbackQuery) => {
       const staffId = parseInt(data.split(':')[1]);
       await managerHandler.showStaffProfile(ctx, staffId);
     }
+    else if (data.startsWith('toggle_staff:')) {
+      const staffId = parseInt(data.split(':')[1]);
+      await managerHandler.toggleStaffStatus(ctx, staffId);
+    }
+    else if (data.startsWith('change_role:')) {
+      const parts = data.split(':');
+      const staffId = parseInt(parts[1]);
+      const newRole = parts[2] as any;
+      await managerHandler.changeStaffRole(ctx, staffId, newRole);
+    }
     else if (data === 'manager_statistics') {
       await managerHandler.showManagerStatistics(ctx);
     }
@@ -644,6 +654,9 @@ bot.on('message', async (msg) => {
     }
     else if (session.waitingFor === 'full_client_search') {
       await managerHandler.handleFullClientSearch(ctx, msg.text);
+    }
+    else if (session.waitingFor === 'edit_notes') {
+      await managerHandler.processEditNotes(ctx, msg.text);
     }
     else if (session.waitingFor === 'add_barista_data') {
       await managerHandler.processAddBaristaData(ctx, msg.text);

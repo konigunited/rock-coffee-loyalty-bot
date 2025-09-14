@@ -437,15 +437,128 @@ export class ManagerHandler {
         [
           { text: '✏️ Редактировать', callback_data: `edit_staff:${staffId}` },
           { text: staff.is_active ? '❌ Деактивировать' : '✅ Активировать', callback_data: `toggle_staff:${staffId}` }
-        ],
-        [{ text: '◀️ К персоналу', callback_data: 'all_staff' }]
+        ]
       ];
+
+      // Add role change option for managers managing other managers
+      const user = getCurrentUser(ctx);
+      if (user && staff.role === 'manager') {
+        const currentUser = await this.userService.getById(user.id);
+        if (currentUser?.role === 'manager' || currentUser?.role === 'admin') {
+          keyboard.push([
+            { text: '☕ Перевести в бариста', callback_data: `change_role:${staffId}:barista` }
+          ]);
+        }
+      }
+
+      keyboard.push([{ text: '◀️ К персоналу', callback_data: 'all_staff' }]);
 
       await this.editMessage(ctx, message, keyboard);
 
     } catch (error) {
       console.error('Staff profile error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при загрузке профиля сотрудника');
+    }
+  }
+
+  // Toggle staff member status
+  async toggleStaffStatus(ctx: BotContext, staffId: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      await this.sendMessage(ctx, '❌ Ошибка аутентификации');
+      return;
+    }
+
+    try {
+      const staff = await this.staffService.getStaffDetails(staffId);
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      // Check permissions for managing this staff member
+      const currentUser = await this.userService.getById(user.id);
+      if (!currentUser || !this.userService.canManageUser(currentUser, staff)) {
+        await this.sendMessage(ctx, '❌ Недостаточно прав для управления этим сотрудником');
+        return;
+      }
+
+      if (staff.is_active) {
+        // Deactivate staff member
+        await this.staffService.deactivateStaffMember(staffId, user.id, 'Деактивирован управляющим');
+        await this.sendMessage(ctx, `✅ Сотрудник ${staff.full_name} деактивирован`);
+      } else {
+        // Reactivate staff member
+        await this.userService.activate(staffId);
+        await this.userService.logActivity(user.id, 'activate_staff', 'user', staffId, { reason: 'Активирован управляющим' });
+        await this.sendMessage(ctx, `✅ Сотрудник ${staff.full_name} активирован`);
+      }
+
+      // Refresh staff profile
+      await this.showStaffProfile(ctx, staffId);
+
+    } catch (error) {
+      console.error('Toggle staff status error:', error);
+      if (error instanceof Error) {
+        await this.sendMessage(ctx, `❌ ${error.message}`);
+      } else {
+        await this.sendMessage(ctx, '❌ Ошибка при изменении статуса сотрудника');
+      }
+    }
+  }
+
+  // Change staff member role  
+  async changeStaffRole(ctx: BotContext, staffId: number, newRole: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      await this.sendMessage(ctx, '❌ Ошибка аутентификации');
+      return;
+    }
+
+    try {
+      const staff = await this.staffService.getStaffDetails(staffId);
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      // Check permissions
+      const currentUser = await this.userService.getById(user.id);
+      if (!currentUser || !this.userService.canManageUser(currentUser, staff)) {
+        await this.sendMessage(ctx, '❌ Недостаточно прав для изменения роли этого сотрудника');
+        return;
+      }
+
+      // Validate new role
+      if (!['barista', 'manager'].includes(newRole)) {
+        await this.sendMessage(ctx, '❌ Недопустимая роль');
+        return;
+      }
+
+      // Update role
+      await this.staffService.updateStaffMember(staffId, { role: newRole as any }, user.id);
+
+      const roleText = newRole === 'barista' ? 'бариста' : 'управляющий';
+      await this.sendMessage(ctx, `✅ Роль сотрудника ${staff.full_name} изменена на "${roleText}"`);
+
+      // Refresh staff profile
+      await this.showStaffProfile(ctx, staffId);
+
+    } catch (error) {
+      console.error('Change staff role error:', error);
+      if (error instanceof Error) {
+        await this.sendMessage(ctx, `❌ ${error.message}`);
+      } else {
+        await this.sendMessage(ctx, '❌ Ошибка при изменении роли сотрудника');
+      }
     }
   }
 
@@ -1014,7 +1127,7 @@ export class ManagerHandler {
         const roleEmoji = staff.role === 'manager' ? '👔' : '☕';
         message += `${roleEmoji} ${staff.full_name}\n`;
         message += `📝 Операций: ${staff.transactions_count} | 👥 Клиентов: ${staff.clients_served}\n`;
-        message += `⭐ Начислил баллов: ${staff.total_points_earned || 0}\n\n`;
+        message += `⭐ Начислил: ${staff.points_earned || 0} б. | 💳 Списал: ${staff.points_spent || 0} б.\n\n`;
         
         keyboard.push([{
           text: `${roleEmoji} ${staff.full_name} (${staff.transactions_count} оп.)`,
@@ -1739,6 +1852,67 @@ export class ManagerHandler {
     }
   }
 
+  // Process edit notes input
+  async processEditNotes(ctx: BotContext, notes: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      await this.sendMessage(ctx, '❌ Ошибка аутентификации');
+      return;
+    }
+
+    const clientId = ctx.session?.selectedClientId;
+    if (!clientId) {
+      await this.sendMessage(ctx, '❌ Ошибка сессии. Начните операцию заново.');
+      return;
+    }
+
+    try {
+      if (notes.length > 500) {
+        await this.sendMessage(ctx, '❌ Заметка слишком длинная (максимум 500 символов)');
+        return;
+      }
+
+      // Update client notes
+      await this.clientService.updateNotes(clientId, notes, user.id);
+
+      // Get updated client data
+      const client = await this.clientService.getForManager(clientId);
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Ошибка при обновлении данных клиента');
+        return;
+      }
+
+      const successText = 
+        `✅ *Заметки успешно обновлены!*\n\n` +
+        `👤 ${client.full_name}\n` +
+        `📝 Новые заметки: ${client.notes || 'Нет заметок'}`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '👤 К клиенту', callback_data: `manager_client:${clientId}` },
+          { text: '🔍 Поиск', callback_data: 'search_client_full' }
+        ],
+        [{ text: '🏠 Главная', callback_data: 'manager_menu' }]
+      ];
+
+      await this.editMessage(ctx, successText, keyboard);
+
+      // Clear session
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+        delete ctx.session.selectedClientId;
+      }
+
+    } catch (error) {
+      console.error('Process edit notes error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при сохранении заметок');
+    }
+  }
+
   // Show client history
   async showClientHistory(ctx: BotContext, clientId: number): Promise<void> {
     if (!await checkManagerAccess(ctx)) {
@@ -2254,7 +2428,7 @@ export class ManagerHandler {
         const roleEmoji = staff.role === 'manager' ? '👔' : '☕';
         message += `${roleEmoji} ${staff.full_name}\n`;
         message += `📝 Операций: ${staff.transactions_count} | 👥 Клиентов: ${staff.clients_served}\n`;
-        message += `⭐ Начислил: ${staff.total_points_earned || 0} б.\n\n`;
+        message += `⭐ Начислил: ${staff.points_earned || 0} б. | 💳 Списал: ${staff.points_spent || 0} б.\n\n`;
         
         keyboard.push([{
           text: `${roleEmoji} ${staff.full_name} (${staff.transactions_count} оп.)`,

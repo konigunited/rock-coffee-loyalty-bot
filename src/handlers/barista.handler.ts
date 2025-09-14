@@ -973,7 +973,7 @@ export class BaristaHandler {
 
         const keyboard: TelegramBot.InlineKeyboardButton[][] = [
           [{ text: '🔍 Найти клиента', callback_data: 'search_client' }],
-          [{ text: '◀️ Главное меню', callback_data: 'barista_main_menu' }]
+          [{ text: '◀️ Главное меню', callback_data: 'barista_menu' }]
         ];
 
         await this.editMessage(ctx, emptyText, keyboard);
@@ -1008,7 +1008,7 @@ export class BaristaHandler {
 
       keyboard.push([
         { text: '🔍 Поиск клиента', callback_data: 'search_client' },
-        { text: '◀️ Главное меню', callback_data: 'barista_main_menu' }
+        { text: '◀️ Главное меню', callback_data: 'barista_menu' }
       ]);
 
       await this.editMessage(ctx, favoritesText, keyboard);
