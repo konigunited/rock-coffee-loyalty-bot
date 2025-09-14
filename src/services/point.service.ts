@@ -248,6 +248,40 @@ export class PointService {
     return await Database.query(sql, [operatorId, limit]);
   }
 
+  // Get recent transactions from all staff (manager view)
+  async getAllRecentTransactions(limit: number = 20): Promise<any[]> {
+    const sql = `
+      SELECT 
+        pt.*,
+        c.card_number,
+        c.full_name as client_name,
+        u.full_name as operator_name
+      FROM point_transactions pt
+      JOIN clients c ON pt.client_id = c.id
+      LEFT JOIN users u ON pt.operator_id = u.id
+      ORDER BY pt.created_at DESC
+      LIMIT $1
+    `;
+    
+    return await Database.query(sql, [limit]);
+  }
+
+  // Get client transaction history (manager view)
+  async getClientTransactions(clientId: number, limit: number = 20): Promise<any[]> {
+    const sql = `
+      SELECT 
+        pt.*,
+        u.full_name as operator_name
+      FROM point_transactions pt
+      LEFT JOIN users u ON pt.operator_id = u.id
+      WHERE pt.client_id = $1
+      ORDER BY pt.created_at DESC
+      LIMIT $2
+    `;
+    
+    return await Database.query(sql, [clientId, limit]);
+  }
+
   // Calculate points for purchase amount (not used in free system)
   calculateEarnPoints(amount: number): number {
     return 0; // Free system - no automatic calculation

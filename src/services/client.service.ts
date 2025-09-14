@@ -128,6 +128,41 @@ export class ClientService {
     return await Database.query(sql, [`%${query}%`, `%${query}%`]);
   }
 
+  // Search for manager (full data with same smart logic as barista)
+  async searchForManager(query: string): Promise<ManagerClientView[]> {
+    // For short numeric queries (1-3 digits), search exact match first
+    const isShortNumber = /^\d{1,3}$/.test(query);
+    
+    if (isShortNumber) {
+      const exactSql = `
+        SELECT *
+        FROM manager_client_view 
+        WHERE card_number = $1
+        ORDER BY full_name
+        LIMIT 10
+      `;
+      
+      const exactResults = await Database.query(exactSql, [query]);
+      if (exactResults.length > 0) {
+        return exactResults;
+      }
+    }
+    
+    // Fall back to partial search for names, longer card numbers, and phone
+    const sql = `
+      SELECT *
+      FROM manager_client_view 
+      WHERE 
+        card_number ILIKE $1 OR 
+        full_name ILIKE $2 OR
+        phone ILIKE $1
+      ORDER BY full_name
+      LIMIT 10
+    `;
+    
+    return await Database.query(sql, [`%${query}%`, `%${query}%`]);
+  }
+
   // Create new client (manager/admin only)
   async create(data: CreateClientData, operatorId: number): Promise<number> {
     const sql = `

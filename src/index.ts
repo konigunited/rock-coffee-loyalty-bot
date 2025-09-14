@@ -340,6 +340,20 @@ bot.on('callback_query', async (callbackQuery) => {
     else if (data === 'staff_performance') {
       await managerHandler.showStaffPerformance(ctx);
     }
+    else if (data === 'recent_operations_manager') {
+      await managerHandler.showRecentOperations(ctx);
+    }
+    else if (data.startsWith('staff_detailed_stats:')) {
+      const staffId = parseInt(data.split(':')[1]);
+      await managerHandler.showStaffDetailedStats(ctx, staffId);
+    }
+    else if (data.startsWith('staff_operations:')) {
+      const staffId = parseInt(data.split(':')[1]);
+      await managerHandler.showStaffOperations(ctx, staffId);
+    }
+    else if (data === 'staff_performance_today') {
+      await managerHandler.showStaffPerformanceToday(ctx);
+    }
     else if (data === 'broadcast_all') {
       await managerHandler.showBroadcastAll(ctx);
     }

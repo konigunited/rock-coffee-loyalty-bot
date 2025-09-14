@@ -267,7 +267,11 @@ export class ManagerHandler {
       ],
       [
         { text: '🔝 Топ клиенты', callback_data: 'top_clients_stats' },
-        { text: '👨‍💼 Работа персонала', callback_data: 'staff_performance' }
+        { text: '📝 Последние операции', callback_data: 'recent_operations_manager' }
+      ],
+      [
+        { text: '👨‍💼 Работа персонала', callback_data: 'staff_performance' },
+        { text: '👔 Сегодня персонал', callback_data: 'staff_performance_today' }
       ],
       [{ text: '◀️ Главная', callback_data: 'manager_menu' }]
     ];
@@ -320,6 +324,7 @@ export class ManagerHandler {
       '• Номер карты (например: 12345)\n' +
       '• ФИО клиента (например: Иванов)\n' +
       '• Номер телефона (например: +79001234567)\n\n' +
+      '🎯 *Умный поиск:* для коротких номеров карт (1-3 цифры) ищет точное совпадение\n' +
       '💡 Вам доступны все персональные данные клиентов';
 
     await this.editMessage(ctx, searchText, keyboard);
@@ -341,7 +346,7 @@ export class ManagerHandler {
     }
 
     try {
-      const clients = await this.clientService.search(query, 'manager');
+      const clients = await this.clientService.searchForManager(query);
 
       if (clients.length === 0) {
         const keyboard: TelegramBot.InlineKeyboardButton[][] = [
@@ -2029,6 +2034,234 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Process manual spend error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при обработке данных');
+    }
+  }
+
+  // Show recent operations across all staff (manager view)
+  async showRecentOperations(ctx: BotContext): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      // Get recent transactions from all staff members (not just current user)
+      const recentTransactions = await this.pointService.getAllRecentTransactions(20);
+
+      if (recentTransactions.length === 0) {
+        const text = '📝 *Последние операции*\n\n❌ Операции не найдены';
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [{ text: '◀️ К статистике', callback_data: 'manager_statistics' }]
+        ];
+        
+        await this.editMessage(ctx, text, keyboard);
+        return;
+      }
+
+      let operationsText = '📝 *Последние операции персонала*\n\n';
+      
+      for (const transaction of recentTransactions) {
+        const date = new Date(transaction.created_at).toLocaleDateString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        const operationType = transaction.operation_type === 'earn' ? '➕' : '➖';
+        const pointsText = transaction.operation_type === 'earn' ? `+${transaction.points}` : `${transaction.points}`;
+        
+        operationsText += 
+          `${operationType} *${pointsText}* баллов\n` +
+          `👤 ${transaction.client_name} (💳 #${transaction.card_number})\n` +
+          `👨‍💼 Сотрудник: ${transaction.operator_name || 'Система'}\n` +
+          `🕐 ${date}\n\n`;
+      }
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '🔄 Обновить', callback_data: 'recent_operations_manager' },
+          { text: '◀️ К статистике', callback_data: 'manager_statistics' }
+        ]
+      ];
+
+      await this.editMessage(ctx, operationsText, keyboard);
+
+    } catch (error) {
+      console.error('Recent operations error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при загрузке операций');
+    }
+  }
+
+  // Show detailed staff statistics
+  async showStaffDetailedStats(ctx: BotContext, staffId: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const staff = await this.staffService.getStaffDetails(staffId);
+      
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      // Get detailed stats for different periods
+      const today = new Date();
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const todayStats = await this.pointService.getBaristaStats(staffId, today, today);
+      const weekStats = await this.pointService.getBaristaStats(staffId, weekAgo, today);
+      const monthStats = await this.pointService.getBaristaStats(staffId, monthAgo, today);
+
+      const roleEmoji = staff.role === 'admin' ? '👑' : staff.role === 'manager' ? '👔' : '☕';
+      
+      const message = 
+        `${roleEmoji} *Детальная статистика*\n\n` +
+        `👤 Сотрудник: *${staff.full_name}*\n` +
+        `🏷️ Роль: ${staff.role}\n\n` +
+        `📊 **За сегодня:**\n` +
+        `👥 Клиентов: ${todayStats.clients_served}\n` +
+        `📝 Операций: ${todayStats.transactions_count}\n` +
+        `⭐ Начислено: ${todayStats.total_earned} б.\n` +
+        `💸 Списано: ${todayStats.total_spent} б.\n\n` +
+        `📊 **За неделю:**\n` +
+        `👥 Клиентов: ${weekStats.clients_served}\n` +
+        `📝 Операций: ${weekStats.transactions_count}\n` +
+        `⭐ Начислено: ${weekStats.total_earned} б.\n` +
+        `💸 Списано: ${weekStats.total_spent} б.\n\n` +
+        `📊 **За месяц:**\n` +
+        `👥 Клиентов: ${monthStats.clients_served}\n` +
+        `📝 Операций: ${monthStats.transactions_count}\n` +
+        `⭐ Начислено: ${monthStats.total_earned} б.\n` +
+        `💸 Списано: ${monthStats.total_spent} б.`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '📝 Операции сотрудника', callback_data: `staff_operations:${staffId}` },
+          { text: '🔄 Обновить', callback_data: `staff_detailed_stats:${staffId}` }
+        ],
+        [{ text: '◀️ К профилю', callback_data: `staff_profile:${staffId}` }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+    } catch (error) {
+      console.error('Staff detailed stats error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при загрузке детальной статистики');
+    }
+  }
+
+  // Show staff operations
+  async showStaffOperations(ctx: BotContext, staffId: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const staff = await this.staffService.getStaffDetails(staffId);
+      
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      const recentTransactions = await this.pointService.getRecentTransactions(staffId, 15);
+
+      if (recentTransactions.length === 0) {
+        const text = `📝 *Операции сотрудника*\n\n👤 ${staff.full_name}\n\n❌ Операции не найдены`;
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [{ text: '◀️ К статистике', callback_data: `staff_detailed_stats:${staffId}` }]
+        ];
+        
+        await this.editMessage(ctx, text, keyboard);
+        return;
+      }
+
+      let operationsText = `📝 *Операции сотрудника*\n\n👤 ${staff.full_name}\n\n`;
+      
+      for (const transaction of recentTransactions) {
+        const date = new Date(transaction.created_at).toLocaleDateString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        const operationType = transaction.operation_type === 'earn' ? '➕' : '➖';
+        const pointsText = transaction.operation_type === 'earn' ? `+${transaction.points}` : `${transaction.points}`;
+        
+        operationsText += 
+          `${operationType} *${pointsText}* баллов\n` +
+          `👤 ${transaction.client_name} (💳 #${transaction.card_number})\n` +
+          `🕐 ${date}\n\n`;
+      }
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [
+          { text: '🔄 Обновить', callback_data: `staff_operations:${staffId}` },
+          { text: '◀️ К статистике', callback_data: `staff_detailed_stats:${staffId}` }
+        ]
+      ];
+
+      await this.editMessage(ctx, operationsText, keyboard);
+
+    } catch (error) {
+      console.error('Staff operations error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при загрузке операций сотрудника');
+    }
+  }
+
+  // Show staff performance today
+  async showStaffPerformanceToday(ctx: BotContext): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const today = new Date();
+      const startOfDay = new Date(today);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(today);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const performance = await this.staffService.getStaffPerformance(startOfDay, endOfDay);
+      
+      if (performance.length === 0) {
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [{ text: '◀️ К статистике', callback_data: 'manager_statistics' }]
+        ];
+        await this.editMessage(ctx, '👨‍💼 *Работа персонала сегодня*\n\n❌ Активности не найдено', keyboard);
+        return;
+      }
+
+      let message = `👨‍💼 *Работа персонала сегодня*\n📅 ${today.toLocaleDateString('ru-RU')}\n\n`;
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+
+      performance.slice(0, 8).forEach((staff, index) => {
+        const roleEmoji = staff.role === 'manager' ? '👔' : '☕';
+        message += `${roleEmoji} ${staff.full_name}\n`;
+        message += `📝 Операций: ${staff.transactions_count} | 👥 Клиентов: ${staff.clients_served}\n`;
+        message += `⭐ Начислил: ${staff.total_points_earned || 0} б.\n\n`;
+        
+        keyboard.push([{
+          text: `${roleEmoji} ${staff.full_name} (${staff.transactions_count} оп.)`,
+          callback_data: `staff_detailed_stats:${staff.id}`
+        }]);
+      });
+
+      keyboard.push([
+        { text: '📊 За неделю', callback_data: 'staff_performance' },
+        { text: '◀️ К статистике', callback_data: 'manager_statistics' }
+      ]);
+
+      await this.editMessage(ctx, message, keyboard);
+
+    } catch (error) {
+      console.error('Staff performance today error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при загрузке статистики персонала');
     }
   }
 }
