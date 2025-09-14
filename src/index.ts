@@ -302,6 +302,10 @@ bot.on('callback_query', async (callbackQuery) => {
       const field = parts[2];
       await managerHandler.askEditStaffField(ctx, staffId, field);
     }
+    else if (data.startsWith('delete_staff:')) {
+      const staffId = parseInt(data.split(':')[1]);
+      await managerHandler.deleteStaff(ctx, staffId);
+    }
     else if (data === 'manager_statistics') {
       await managerHandler.showManagerStatistics(ctx);
     }

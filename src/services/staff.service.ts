@@ -134,6 +134,11 @@ export class StaffService {
       throw new Error('User not found');
     }
 
+    // Additional rule: managers are allowed to deactivate only baristas (not other managers)
+    if (deactivator.role === 'manager' && staff.role === 'manager') {
+      throw new Error('Insufficient permissions to deactivate this staff member');
+    }
+
     if (!this.userService.canManageUser(deactivator, staff)) {
       throw new Error('Insufficient permissions to deactivate this staff member');
     }

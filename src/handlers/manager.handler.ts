@@ -451,6 +451,18 @@ export class ManagerHandler {
         }
       }
 
+      // Add delete option depending on permissions
+      if (user) {
+        const currentUser = await this.userService.getById(user.id);
+        if (currentUser?.role === 'admin') {
+          // Admins can delete anyone
+          keyboard.push([{ text: '🗑️ Удалить сотрудника', callback_data: `delete_staff:${staffId}` }]);
+        } else if (currentUser?.role === 'manager' && staff.role === 'barista') {
+          // Managers can delete baristas only
+          keyboard.push([{ text: '🗑️ Удалить бариста', callback_data: `delete_staff:${staffId}` }]);
+        }
+      }
+
       keyboard.push([{ text: '◀️ К персоналу', callback_data: 'all_staff' }]);
 
       await this.editMessage(ctx, message, keyboard);
@@ -557,6 +569,50 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Process edit staff field error:', error);
       await this.sendMessage(ctx, `❌ Ошибка при обновлении сотрудника: ${error}`);
+    }
+  }
+
+  // Permanently remove staff from active lists (soft delete hidden)
+  async deleteStaff(ctx: BotContext, staffId: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) return;
+
+    const user = getCurrentUser(ctx);
+    if (!user) {
+      await this.sendMessage(ctx, '❌ Ошибка аутентификации');
+      return;
+    }
+
+    try {
+      const staff = await this.userService.getById(staffId);
+      if (!staff) {
+        await this.sendMessage(ctx, '❌ Сотрудник не найден');
+        return;
+      }
+
+      // Admin can delete anyone; manager can delete only baristas
+      const currentUser = await this.userService.getById(user.id);
+      if (!currentUser) return;
+      if (currentUser.role === 'manager' && staff.role !== 'barista') {
+        await this.sendMessage(ctx, '❌ Недостаточно прав для удаления этого сотрудника');
+        return;
+      }
+
+      // Soft-delete by setting is_active=false and a hidden flag
+      await this.userService.deactivate(staffId);
+
+      // Additionally mark as hidden in a separate field if schema supports it (safe fallback)
+      try {
+        await Database.query('UPDATE users SET hidden = true WHERE id = $1', [staffId]);
+      } catch (e) {
+        // Ignore if column doesn't exist
+      }
+
+      await this.sendMessage(ctx, '✅ Сотрудник удалён и больше не отображается в списках');
+      await this.showAllStaff(ctx);
+
+    } catch (error) {
+      console.error('Delete staff error:', error);
+      await this.sendMessage(ctx, `❌ Ошибка при удалении сотрудника: ${error}`);
     }
   }
 
