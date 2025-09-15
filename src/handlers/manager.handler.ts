@@ -984,6 +984,30 @@ export class ManagerHandler {
     }
   }
 
+  private async editMessageNoMarkdown(ctx: BotContext, text: string, keyboard?: TelegramBot.InlineKeyboardButton[][]): Promise<void> {
+    if (!ctx.message?.chat?.id) return;
+
+    try {
+      await this.bot.editMessageText(text, {
+        chat_id: ctx.message.chat.id,
+        message_id: ctx.message.message_id,
+        reply_markup: keyboard ? { inline_keyboard: keyboard } : undefined
+      });
+    } catch (error) {
+      await this.sendMessageNoMarkdown(ctx, text, keyboard);
+    }
+  }
+
+  private async sendMessageNoMarkdown(ctx: BotContext, text: string, keyboard?: TelegramBot.InlineKeyboardButton[][]): Promise<void> {
+    if (!ctx.message?.chat?.id) return;
+
+    const options: TelegramBot.SendMessageOptions = {
+      reply_markup: keyboard ? { inline_keyboard: keyboard } : undefined
+    };
+
+    await this.bot.sendMessage(ctx.message.chat.id, text, options);
+  }
+
   // Show birthday clients
   async showBirthdayClients(ctx: BotContext): Promise<void> {
     if (!await checkManagerAccess(ctx)) {
@@ -1212,13 +1236,13 @@ export class ManagerHandler {
         return;
       }
 
-      let message = `☕ *Все бариста* (${baristas.length}):\n\n`;
+      let message = `☕ Все бариста (${baristas.length}):\n\n`;
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
 
       baristas.slice(0, 8).forEach(barista => {
         message += `☕ ${barista.full_name} ✅\n`;
         message += `📱 ${barista.username ? `@${barista.username.replace('@', '')}` : 'не указан'}\n\n`;
-        
+
         keyboard.push([{
           text: `☕ ${barista.full_name}`,
           callback_data: `staff_profile:${barista.id}`
@@ -1227,7 +1251,7 @@ export class ManagerHandler {
 
       keyboard.push([{ text: '◀️ К управлению персоналом', callback_data: 'manage_staff' }]);
 
-      await this.editMessage(ctx, message, keyboard);
+      await this.editMessageNoMarkdown(ctx, message, keyboard);
 
     } catch (error) {
       console.error('Baristas only error:', error);
