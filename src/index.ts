@@ -713,6 +713,13 @@ bot.on('message', async (msg) => {
       const settingKey = session.waitingFor.replace('edit_setting_', '');
       await adminHandler.processSettingInput(ctx, settingKey, msg.text);
     }
+    // Manager editing staff field (session)
+    else if (session.waitingFor && session.waitingFor.startsWith('edit_staff_field:')) {
+      const parts = session.waitingFor.split(':');
+      const staffId = parseInt(parts[1]);
+      const field = parts[2];
+      await managerHandler.processEditStaffField(ctx, staffId, field, msg.text.trim());
+    }
     // CLIENT AUTHENTICATION HANDLERS - use new middleware for unhandled states
     else {
       const { handleTextInput } = await import('./middleware/client.middleware');
@@ -720,15 +727,6 @@ bot.on('message', async (msg) => {
         // If not handled by client middleware, log unhandled state
         console.log(`Unhandled session state: ${session.waitingFor}`);
       });
-    }
-
-    // Manager editing staff field (session)
-    if (session.waitingFor && session.waitingFor.startsWith('edit_staff_field:')) {
-      const parts = session.waitingFor.split(':');
-      const staffId = parseInt(parts[1]);
-      const field = parts[2];
-      await managerHandler.processEditStaffField(ctx, staffId, field, msg.text.trim());
-      return;
     }
 
   } catch (error) {

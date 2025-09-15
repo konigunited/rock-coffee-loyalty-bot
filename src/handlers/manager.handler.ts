@@ -568,7 +568,11 @@ export class ManagerHandler {
 
     } catch (error) {
       console.error('Process edit staff field error:', error);
+      // Clear session state to prevent user from getting stuck
+      if (ctx.session) delete ctx.session.waitingFor;
       await this.sendMessage(ctx, `❌ Ошибка при обновлении сотрудника: ${error}`);
+      // Return to staff management menu
+      await this.showStaffManagement(ctx);
     }
   }
 
