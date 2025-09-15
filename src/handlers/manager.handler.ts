@@ -1217,7 +1217,7 @@ export class ManagerHandler {
 
       baristas.slice(0, 8).forEach(barista => {
         message += `☕ ${barista.full_name} ✅\n`;
-        message += `📱 @${barista.username || 'не указан'}\n\n`;
+        message += `📱 ${barista.username ? `@${barista.username}` : 'не указан'}\n\n`;
         
         keyboard.push([{
           text: `☕ ${barista.full_name}`,
