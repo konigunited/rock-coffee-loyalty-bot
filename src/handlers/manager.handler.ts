@@ -421,7 +421,7 @@ export class ManagerHandler {
         `${roleEmoji} *Профиль сотрудника* ${statusEmoji}\n\n` +
         `👤 ФИО: *${staff.full_name}*\n` +
         `🏷️ Роль: ${staff.role}\n` +
-        `📱 Telegram: ${staff.username ? `@${staff.username}` : 'не указан'}\n` +
+        `📱 Telegram: ${staff.username ? `@${staff.username.replace('@', '')}` : 'не указан'}\n` +
         `📅 Создан: ${new Date(staff.created_at).toLocaleDateString('ru-RU')}\n\n` +
         `📊 *Статистика работы:*\n` +
         `📝 Всего операций: *${staff.total_transactions}*\n` +
@@ -1217,7 +1217,7 @@ export class ManagerHandler {
 
       baristas.slice(0, 8).forEach(barista => {
         message += `☕ ${barista.full_name} ✅\n`;
-        message += `📱 ${barista.username ? `@${barista.username}` : 'не указан'}\n\n`;
+        message += `📱 ${barista.username ? `@${barista.username.replace('@', '')}` : 'не указан'}\n\n`;
         
         keyboard.push([{
           text: `☕ ${barista.full_name}`,
