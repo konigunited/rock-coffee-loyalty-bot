@@ -161,6 +161,38 @@ export class StaffService {
     );
   }
 
+  // Permanently delete staff member from database (hard delete)
+  async deleteStaffMember(staffId: number, deletedBy: number, reason?: string): Promise<void> {
+    // Validate permissions
+    const deleter = await this.userService.getById(deletedBy);
+    const staff = await this.userService.getById(staffId);
+
+    if (!deleter || !staff) {
+      throw new Error('User not found');
+    }
+
+    // Additional rule: managers are allowed to delete only baristas (not other managers)
+    if (deleter.role === 'manager' && staff.role !== 'barista') {
+      throw new Error('Insufficient permissions to delete this staff member');
+    }
+
+    if (!this.userService.canManageUser(deleter, staff)) {
+      throw new Error('Insufficient permissions to delete this staff member');
+    }
+
+    // Log the deletion before deleting
+    await this.userService.logActivity(
+      deletedBy,
+      'delete_staff',
+      'user',
+      staffId,
+      { full_name: staff.full_name, role: staff.role, reason: reason || 'No reason provided' }
+    );
+
+    // Hard delete from database
+    await this.userService.hardDelete(staffId);
+  }
+
   // Get staff member details with performance
   async getStaffDetails(staffId: number): Promise<any> {
     const sql = `

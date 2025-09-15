@@ -576,7 +576,7 @@ export class ManagerHandler {
     }
   }
 
-  // Permanently remove staff from active lists (soft delete hidden)
+  // Permanently remove staff from database (hard delete)
   async deleteStaff(ctx: BotContext, staffId: number): Promise<void> {
     if (!await checkManagerAccess(ctx)) return;
 
@@ -593,36 +593,10 @@ export class ManagerHandler {
         return;
       }
 
-      // Admin can delete anyone; manager can delete only baristas
-      const currentUser = await this.userService.getById(user.id);
-      if (!currentUser) return;
-      if (currentUser.role === 'manager' && staff.role !== 'barista') {
-        await this.sendMessage(ctx, '❌ Недостаточно прав для удаления этого сотрудника');
-        return;
-      }
+      // Use staff service method for proper permissions and logging
+      await this.staffService.deleteStaffMember(staffId, user.id, 'Удалён через интерфейс управляющего');
 
-      // Soft-delete by setting is_active=false and a hidden flag
-      // Additionally anonymize personal data to simulate permanent deletion while preserving FK integrity
-      await this.userService.deactivate(staffId);
-
-      const anonName = `Удалённый сотрудник ${staffId}`;
-      try {
-        await Database.query(
-          `UPDATE users SET username = NULL, telegram_id = NULL, full_name = $1, is_active = false WHERE id = $2`,
-          [anonName, staffId]
-        );
-      } catch (e) {
-        // If update fails for any reason, ignore - user is already deactivated
-      }
-
-      // Additionally mark as hidden in a separate field if schema supports it (safe fallback)
-      try {
-        await Database.query('UPDATE users SET hidden = true WHERE id = $1', [staffId]);
-      } catch (e) {
-        // Ignore if column doesn't exist
-      }
-
-      await this.sendMessage(ctx, '✅ Сотрудник удалён (анонимизирован) и больше не отображается в списках');
+      await this.sendMessage(ctx, `✅ Сотрудник "${staff.full_name}" полностью удалён из базы данных`);
       await this.showAllStaff(ctx);
 
     } catch (error) {

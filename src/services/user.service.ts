@@ -188,11 +188,17 @@ export class UserService {
   // Deactivate user (soft delete)
   async deactivate(userId: number): Promise<void> {
     const sql = `
-      UPDATE users 
+      UPDATE users
       SET is_active = false, updated_at = NOW()
       WHERE id = $1
     `;
-    
+
+    await Database.query(sql, [userId]);
+  }
+
+  // Permanently delete user from database (hard delete)
+  async hardDelete(userId: number): Promise<void> {
+    const sql = `DELETE FROM users WHERE id = $1`;
     await Database.query(sql, [userId]);
   }
 
