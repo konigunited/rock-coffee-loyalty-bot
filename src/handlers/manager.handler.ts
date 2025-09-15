@@ -417,16 +417,16 @@ export class ManagerHandler {
           })
         : 'Нет операций';
 
-      const message = 
-        `${roleEmoji} *Профиль сотрудника* ${statusEmoji}\n\n` +
-        `👤 ФИО: *${staff.full_name}*\n` +
+      const message =
+        `${roleEmoji} Профиль сотрудника ${statusEmoji}\n\n` +
+        `👤 ФИО: ${staff.full_name}\n` +
         `🏷️ Роль: ${staff.role}\n` +
         `📱 Telegram: ${staff.username ? `@${staff.username.replace('@', '')}` : 'не указан'}\n` +
         `📅 Создан: ${new Date(staff.created_at).toLocaleDateString('ru-RU')}\n\n` +
-        `📊 *Статистика работы:*\n` +
-        `📝 Всего операций: *${staff.total_transactions}*\n` +
-        `👥 Обслужил клиентов: *${staff.total_clients_served}*\n` +
-        `⭐ Начислил баллов: *${staff.total_points_earned}*\n` +
+        `📊 Статистика работы:\n` +
+        `📝 Всего операций: ${staff.total_transactions}\n` +
+        `👥 Обслужил клиентов: ${staff.total_clients_served}\n` +
+        `⭐ Начислил баллов: ${staff.total_points_earned}\n` +
         `🕐 Последняя операция: ${lastTransactionText}`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
@@ -465,7 +465,7 @@ export class ManagerHandler {
 
       keyboard.push([{ text: '◀️ К персоналу', callback_data: 'all_staff' }]);
 
-      await this.editMessage(ctx, message, keyboard);
+      await this.editMessageNoMarkdown(ctx, message, keyboard);
 
     } catch (error) {
       console.error('Staff profile error:', error);
