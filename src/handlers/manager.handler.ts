@@ -421,7 +421,7 @@ export class ManagerHandler {
         `${roleEmoji} *Профиль сотрудника* ${statusEmoji}\n\n` +
         `👤 ФИО: *${staff.full_name}*\n` +
         `🏷️ Роль: ${staff.role}\n` +
-        `📱 Telegram: @${staff.username || 'не указан'}\n` +
+        `📱 Telegram: ${staff.username ? `@${staff.username}` : 'не указан'}\n` +
         `📅 Создан: ${new Date(staff.created_at).toLocaleDateString('ru-RU')}\n\n` +
         `📊 *Статистика работы:*\n` +
         `📝 Всего операций: *${staff.total_transactions}*\n` +

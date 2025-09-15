@@ -85,8 +85,8 @@ export class AdminHandler {
       
       let managersText = '';
       if (managers.length > 0) {
-        managersText = managers.map((manager, index) => 
-          `${index + 1}. ${manager.full_name} (@${manager.username || 'N/A'})\n` +
+        managersText = managers.map((manager, index) =>
+          `${index + 1}. ${manager.full_name} (${manager.username ? `@${manager.username}` : 'N/A'})\n` +
           `   📱 ID: ${manager.telegram_id}\n` +
           `   📅 Добавлен: ${new Date(manager.created_at).toLocaleDateString('ru-RU')}\n`
         ).join('\n');
@@ -96,8 +96,8 @@ export class AdminHandler {
 
       let baristasText = '';
       if (baristas.length > 0) {
-        baristasText = baristas.map((barista, index) => 
-          `${index + 1}. ${barista.full_name} (@${barista.username || 'N/A'})\n` +
+        baristasText = baristas.map((barista, index) =>
+          `${index + 1}. ${barista.full_name} (${barista.username ? `@${barista.username}` : 'N/A'})\n` +
           `   📱 ID: ${barista.telegram_id}\n`
         ).join('\n');
       } else {
@@ -987,7 +987,7 @@ export class AdminHandler {
         managers.forEach((manager, index) => {
           const statusIcon = manager.is_active ? '🟢' : '🔴';
           text += `${index + 1}. ${statusIcon} *${manager.full_name}*\n`;
-          text += `   @${manager.username || 'без username'}\n`;
+          text += `   ${manager.username ? `@${manager.username}` : 'без username'}\n`;
           text += `   ID: \`${manager.telegram_id}\`\n\n`;
         });
       }
@@ -1025,7 +1025,7 @@ export class AdminHandler {
         baristas.forEach((barista, index) => {
           const statusIcon = barista.is_active ? '🟢' : '🔴';
           text += `${index + 1}. ${statusIcon} *${barista.full_name}*\n`;
-          text += `   @${barista.username || 'без username'}\n`;
+          text += `   ${barista.username ? `@${barista.username}` : 'без username'}\n`;
           text += `   ID: \`${barista.telegram_id}\`\n\n`;
         });
       }
@@ -1161,7 +1161,7 @@ export class AdminHandler {
         `✅ *МЕНЕДЖЕР ДОБАВЛЕН*\n\n` +
         `Новый менеджер успешно добавлен в систему:\n\n` +
         `👨‍💼 *${fullName}*\n` +
-        `@${username}\n` +
+        `${username ? `@${username}` : 'без username'}\n` +
         `ID: \`${telegramId}\`\n\n` +
         `Менеджер может войти в систему командой /start`;
 
@@ -1213,7 +1213,7 @@ export class AdminHandler {
         `✅ *БАРИСТА ДОБАВЛЕН*\n\n` +
         `Новый баристa успешно добавлен в систему:\n\n` +
         `👨‍🍳 *${fullName}*\n` +
-        `@${username}\n` +
+        `${username ? `@${username}` : 'без username'}\n` +
         `ID: \`${telegramId}\`\n\n` +
         `Баристa может войти в систему командой /start`;
 
