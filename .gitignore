@@ -135,6 +135,9 @@ temp/
 *.sql
 *.dump
 
+# But keep migrations
+!migrations/*.sql
+
 # SSL certificates
 *.pem
 *.key

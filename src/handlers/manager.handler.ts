@@ -5,6 +5,8 @@ import { PointService } from '../services/point.service';
 import { UserService } from '../services/user.service';
 import { NotificationService } from '../services/notification.service';
 import { StaffService } from '../services/staff.service';
+import { BroadcastService } from '../services/broadcast.service';
+import { TelegramMessageService } from '../services/sms.service';
 import { BotContext, getCurrentUser, checkManagerAccess, ACCESS_DENIED_MESSAGES } from '../middleware/access.middleware';
 import { ManagerClientView, CreateClientData, UpdateClientData } from '../types/client.types';
 import { CreateUserData, User } from '../types/user.types';
@@ -16,6 +18,8 @@ export class ManagerHandler {
   private userService: UserService;
   private notificationService: NotificationService;
   private staffService: StaffService;
+  private broadcastService: BroadcastService;
+  private messageService: TelegramMessageService;
 
   constructor(bot: TelegramBot) {
     this.bot = bot;
@@ -24,6 +28,8 @@ export class ManagerHandler {
     this.userService = new UserService();
     this.notificationService = new NotificationService(bot);
     this.staffService = new StaffService();
+    this.broadcastService = new BroadcastService(bot);
+    this.messageService = new TelegramMessageService(bot);
   }
 
   // Main menu for manager
@@ -161,7 +167,7 @@ export class ManagerHandler {
         ],
         [
           { text: '📊 История', callback_data: `client_history:${clientId}` },
-          { text: '📱 Отправить SMS', callback_data: `send_sms:${clientId}` }
+          { text: '💬 Отправить сообщение', callback_data: `send_sms:${clientId}` }
         ],
         [
           { text: '🗑️ Деактивировать', callback_data: `deactivate_client:${clientId}` },
@@ -1448,22 +1454,43 @@ export class ManagerHandler {
     await this.showStaffStatistics(ctx); // Reuse existing functionality
   }
 
-  // Broadcast methods (stubs for now)
+  // Broadcast methods
   async showBroadcastAll(ctx: BotContext): Promise<void> {
     if (!await checkManagerAccess(ctx)) {
       return;
     }
 
-    const message = 
-      '📢 *Рассылка всем клиентам*\n\n' +
-      'Функция в разработке.\n\n' +
-      'Здесь будет возможность отправить сообщение всем активным клиентам системы.';
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
 
-    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
-    ];
+      // Get count of recipients
+      const recipients = await this.broadcastService.getBroadcastRecipients('all');
 
-    await this.editMessage(ctx, message, keyboard);
+      const message =
+        '📢 *Рассылка всем клиентам*\n\n' +
+        `📊 Получателей: ${recipients.length} клиентов\n\n` +
+        '📝 Отправьте текст сообщения для рассылки.\n\n' +
+        '💡 Можно использовать {name} для имени клиента';
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+      // Set session to wait for broadcast message
+      if (ctx.session) {
+        ctx.session.waitingFor = 'broadcast_all_message';
+      }
+
+    } catch (error) {
+      console.error('Show broadcast all error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при подготовке рассылки');
+    }
   }
 
   async showBroadcastBirthdays(ctx: BotContext): Promise<void> {
@@ -1471,16 +1498,35 @@ export class ManagerHandler {
       return;
     }
 
-    const message = 
-      '🎂 *Рассылка именинникам*\n\n' +
-      'Функция в разработке.\n\n' +
-      'Здесь будет возможность отправить поздравления клиентам, у которых скоро день рождения.';
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
 
-    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
-    ];
+      const recipients = await this.broadcastService.getBroadcastRecipients('birthday');
 
-    await this.editMessage(ctx, message, keyboard);
+      const message =
+        '🎂 *Рассылка именинникам*\n\n' +
+        `📊 Получателей: ${recipients.length} клиентов\n\n` +
+        '📝 Отправьте текст поздравления.\n\n' +
+        '💡 Используйте {name} для имени клиента';
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+      if (ctx.session) {
+        ctx.session.waitingFor = 'broadcast_birthday_message';
+      }
+
+    } catch (error) {
+      console.error('Show broadcast birthdays error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при подготовке рассылки');
+    }
   }
 
   async showBroadcastInactive(ctx: BotContext): Promise<void> {
@@ -1488,16 +1534,44 @@ export class ManagerHandler {
       return;
     }
 
-    const message = 
-      '😴 *Рассылка неактивным клиентам*\n\n' +
-      'Функция в разработке.\n\n' +
-      'Здесь будет возможность напомнить о себе клиентам, которые давно не посещали кофейню.';
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
 
-    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
-    ];
+      // Get inactive clients (not visited in last 30 days)
+      const recipients = await Database.query(`
+        SELECT id as client_id, telegram_id, full_name
+        FROM clients
+        WHERE is_active = true
+          AND telegram_id IS NOT NULL
+          AND last_visit < CURRENT_DATE - INTERVAL '30 days'
+        ORDER BY last_visit ASC
+      `);
 
-    await this.editMessage(ctx, message, keyboard);
+      const message =
+        '😴 *Рассылка неактивным клиентам*\n\n' +
+        `📊 Получателей: ${recipients.length} клиентов\n` +
+        `(не посещали более 30 дней)\n\n` +
+        '📝 Отправьте текст сообщения.\n\n' +
+        '💡 Используйте {name} для имени клиента';
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+      if (ctx.session) {
+        ctx.session.waitingFor = 'broadcast_inactive_message';
+      }
+
+    } catch (error) {
+      console.error('Show broadcast inactive error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при подготовке рассылки');
+    }
   }
 
   async showBroadcastTop(ctx: BotContext): Promise<void> {
@@ -1505,16 +1579,36 @@ export class ManagerHandler {
       return;
     }
 
-    const message = 
-      '🔝 *Рассылка топ клиентам*\n\n' +
-      'Функция в разработке.\n\n' +
-      'Здесь будет возможность отправить специальные предложения VIP клиентам.';
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
 
-    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
-    ];
+      const recipients = await this.broadcastService.getBroadcastRecipients('vip');
 
-    await this.editMessage(ctx, message, keyboard);
+      const message =
+        '🔝 *Рассылка VIP клиентам*\n\n' +
+        `📊 Получателей: ${recipients.length} клиентов\n` +
+        `(траты 10000₽+)\n\n` +
+        '📝 Отправьте текст сообщения.\n\n' +
+        '💡 Используйте {name} для имени клиента';
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+      if (ctx.session) {
+        ctx.session.waitingFor = 'broadcast_vip_message';
+      }
+
+    } catch (error) {
+      console.error('Show broadcast top error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при подготовке рассылки');
+    }
   }
 
   async showBroadcastHistory(ctx: BotContext): Promise<void> {
@@ -1522,16 +1616,47 @@ export class ManagerHandler {
       return;
     }
 
-    const message = 
-      '📊 *История рассылок*\n\n' +
-      'Функция в разработке.\n\n' +
-      'Здесь будет отображаться история всех отправленных рассылок с результатами доставки.';
+    try {
+      const history = await this.broadcastService.getBroadcastHistory(10);
 
-    const keyboard: TelegramBot.InlineKeyboardButton[][] = [
-      [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
-    ];
+      if (history.length === 0) {
+        const message =
+          '📊 *История рассылок*\n\n' +
+          'Рассылки еще не отправлялись.';
 
-    await this.editMessage(ctx, message, keyboard);
+        const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+          [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
+        ];
+
+        await this.editMessage(ctx, message, keyboard);
+        return;
+      }
+
+      let message = '📊 *История рассылок*\n\n';
+
+      for (const broadcast of history) {
+        const createdAt = new Date(broadcast.created_at!);
+        const statusEmoji = broadcast.status === 'completed' ? '✅' :
+                           broadcast.status === 'failed' ? '❌' :
+                           broadcast.status === 'sending' ? '⏳' : '📝';
+
+        message +=
+          `${statusEmoji} *${broadcast.title}*\n` +
+          `📅 ${createdAt.toLocaleString('ru-RU')}\n` +
+          `👥 Отправлено: ${broadcast.sent_count || 0}/${broadcast.total_recipients || 0}\n` +
+          `❌ Ошибок: ${broadcast.failed_count || 0}\n\n`;
+      }
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+    } catch (error) {
+      console.error('Show broadcast history error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при загрузке истории');
+    }
   }
 
   // Manager earn points for client
@@ -2161,7 +2286,7 @@ export class ManagerHandler {
     }
   }
 
-  // Send SMS to client
+  // Send Telegram message to client
   async sendSMS(ctx: BotContext, clientId: number): Promise<void> {
     if (!await checkManagerAccess(ctx)) {
       return;
@@ -2174,15 +2299,15 @@ export class ManagerHandler {
         return;
       }
 
-      if (!client.phone) {
-        await this.sendMessage(ctx, '❌ У клиента не указан номер телефона');
+      if (!client.telegram_id) {
+        await this.sendMessage(ctx, '❌ Клиент не подключен к Telegram боту');
         return;
       }
 
-      const message = 
-        `📱 *Отправка SMS*\n\n` +
+      const message =
+        `📱 *Отправка сообщения клиенту*\n\n` +
         `👤 ${client.full_name}\n` +
-        `📱 ${client.phone}\n\n` +
+        `💬 Telegram ID: ${client.telegram_id}\n\n` +
         `📝 *Выберите шаблон сообщения:*`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
@@ -2194,51 +2319,72 @@ export class ManagerHandler {
           { text: '💰 Баланс баллов', callback_data: `sms_template:${clientId}:balance` },
           { text: '☕ Приглашение', callback_data: `sms_template:${clientId}:invite` }
         ],
-        [
-          { text: '✏️ Написать свое', callback_data: `custom_sms:${clientId}` },
-          { text: '📋 История SMS', callback_data: `sms_history:${clientId}` }
-        ],
         [{ text: '◀️ К клиенту', callback_data: `manager_client:${clientId}` }]
       ];
 
       await this.editMessage(ctx, message, keyboard);
 
     } catch (error) {
-      console.error('Send SMS error:', error);
-      await this.sendMessage(ctx, '❌ Ошибка при отправке SMS');
+      console.error('Send message error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при отправке сообщения');
     }
   }
 
-  // Send SMS template
+  // Send Telegram message template
   async sendSMSTemplate(ctx: BotContext, clientId: number, template: string): Promise<void> {
     if (!await checkManagerAccess(ctx)) {
       return;
     }
 
     try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
+
       const client = await this.clientService.getForManager(clientId);
       if (!client) {
         await this.sendMessage(ctx, '❌ Клиент не найден');
         return;
       }
 
-      const templates = {
-        birthday: `🎂 Поздравляем с Днем Рождения, ${client.full_name.split(' ')[1]}! В подарок 100 баллов на карте ${client.card_number}. Rock Coffee ждет вас!`,
-        promo: `☕ Только сегодня скидка 20% на все напитки! Ваша карта: ${client.card_number}, баланс: ${client.balance} баллов. Rock Coffee`,
-        balance: `💰 ${client.full_name.split(' ')[1]}, на вашей карте ${client.card_number} баланс: ${client.balance} баллов. Ждем вас в Rock Coffee!`,
-        invite: `☕ Скучаем по вам в Rock Coffee! Ваша карта ${client.card_number} готова к новым покупкам. Приходите за любимым кофе!`
-      };
+      if (!client.telegram_id) {
+        await this.sendMessage(ctx, '❌ Клиент не подключен к Telegram боту');
+        return;
+      }
 
-      const smsText = templates[template as keyof typeof templates];
-      
-      // Here we would integrate with SMS service
-      // For now, just simulate sending
-      
-      const message = 
-        `✅ *SMS отправлено!*\n\n` +
+      // Get message template
+      const messageText = this.messageService.getMessageTemplate(
+        template as any,
+        client.full_name,
+        client.card_number,
+        client.balance
+      );
+
+      if (!messageText) {
+        await this.sendMessage(ctx, '❌ Неизвестный шаблон сообщения');
+        return;
+      }
+
+      // Send message using Telegram message service
+      const result = await this.messageService.sendMessage(
+        clientId,
+        messageText,
+        template,
+        user.id
+      );
+
+      const statusIcon = result.success ? '✅' : '❌';
+      const statusText = result.success
+        ? 'Сообщение отправлено через Telegram!'
+        : `Ошибка: ${result.error}`;
+
+      const message =
+        `${statusIcon} *${statusText}*\n\n` +
         `👤 ${client.full_name}\n` +
-        `📱 ${client.phone}\n\n` +
-        `📝 *Текст сообщения:*\n${smsText}\n\n` +
+        `💬 Telegram ID: ${client.telegram_id}\n\n` +
+        `📝 *Текст сообщения:*\n${messageText}\n\n` +
         `⏰ ${new Date().toLocaleString('ru-RU')}`;
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
@@ -2249,8 +2395,8 @@ export class ManagerHandler {
       await this.editMessage(ctx, message, keyboard);
 
     } catch (error) {
-      console.error('Send SMS template error:', error);
-      await this.sendMessage(ctx, '❌ Ошибка при отправке SMS');
+      console.error('Send message template error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при отправке сообщения');
     }
   }
 
@@ -2975,6 +3121,60 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Manager quick points error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при обработке операции');
+    }
+  }
+
+  // Process broadcast message text
+  async processBroadcastMessage(ctx: BotContext, messageText: string, segment: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
+
+      // Create broadcast
+      const broadcastId = await this.broadcastService.createBroadcast({
+        title: `Рассылка: ${segment}`,
+        message: messageText,
+        segment: segment as any,
+        status: 'draft',
+        created_by: user.id
+      });
+
+      // Send broadcast
+      await this.sendMessage(ctx, '⏳ Рассылка запущена...');
+
+      const result = await this.broadcastService.sendBroadcast(broadcastId);
+
+      let message =
+        `✅ *Рассылка завершена!*\n\n` +
+        `📊 Отправлено: ${result.totalSent}\n` +
+        `❌ Ошибок: ${result.totalFailed}\n\n`;
+
+      if (result.errors.length > 0) {
+        message += `⚠️ Первые ошибки:\n${result.errors.slice(0, 3).join('\n')}`;
+      }
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '📊 История', callback_data: 'broadcast_history' }],
+        [{ text: '🏠 Главное меню', callback_data: 'manager_menu' }]
+      ];
+
+      await this.sendMessage(ctx, message, keyboard);
+
+      // Clear session
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+      }
+
+    } catch (error) {
+      console.error('Process broadcast message error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при отправке рассылки');
     }
   }
 }

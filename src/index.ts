@@ -9,6 +9,7 @@ import { ManagerHandler } from './handlers/manager.handler';
 import { AdminHandler } from './handlers/admin.handler';
 import { BotContext, checkBaristaAccess, checkManagerAccess, checkAdminAccess, getCurrentUser } from './middleware/access.middleware';
 import { UserService } from './services/user.service';
+import { SessionService } from './services/session.service';
 import { ensureNotAuthenticated, handleClientCallbacks } from './middleware/client.middleware';
 
 // Load environment variables
@@ -38,12 +39,10 @@ const port = parseInt(process.env.PORT || '3000');
 
 // Services
 const userService = new UserService();
+const sessionService = new SessionService();
 const baristaHandler = new BaristaHandler(bot);
 const managerHandler = new ManagerHandler(bot);
 const adminHandler = new AdminHandler(bot);
-
-// Session storage (in production, use Redis or database)
-export const sessions = new Map<number, any>();
 
 // Middleware
 app.use(helmet());
@@ -55,18 +54,25 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Helper function to get session
-function getSession(userId: number): any {
-  if (!sessions.has(userId)) {
-    sessions.set(userId, {});
-  }
-  return sessions.get(userId);
+// Helper function to get session (async)
+async function getSession(userId: number): Promise<any> {
+  return await sessionService.get(userId);
 }
 
-// Helper function to create bot context
-function createBotContext(msg: TelegramBot.Message): BotContext {
-  const session = getSession(msg.from?.id || 0);
-  
+// Helper function to save session (async)
+async function saveSession(userId: number, session: any): Promise<void> {
+  await sessionService.set(userId, session);
+}
+
+// Helper function to clear session field (async)
+async function clearSessionField(userId: number, field: string): Promise<void> {
+  await sessionService.clearField(userId, field);
+}
+
+// Helper function to create bot context (async)
+async function createBotContext(msg: TelegramBot.Message): Promise<BotContext> {
+  const session = await getSession(msg.from?.id || 0);
+
   return {
     from: msg.from,
     message: msg,
@@ -75,6 +81,9 @@ function createBotContext(msg: TelegramBot.Message): BotContext {
   };
 }
 
+// Export session helpers for use in handlers
+export { getSession, saveSession, clearSessionField };
+
 // Bot error handler
 bot.on('polling_error', (error) => {
   console.error('Bot polling error:', error);
@@ -82,7 +91,7 @@ bot.on('polling_error', (error) => {
 
 // Start command
 bot.onText(/\/start/, async (msg) => {
-  const ctx = createBotContext(msg);
+  const ctx = await createBotContext(msg);
   
   // Check user role and show appropriate menu
   if (msg.from) {
@@ -116,7 +125,7 @@ bot.onText(/\/start/, async (msg) => {
 
 // Help command
 bot.onText(/\/help/, async (msg) => {
-  const ctx = createBotContext(msg);
+  const ctx = await createBotContext(msg);
   
   if (await checkBaristaAccess(ctx)) {
     const helpText = 
@@ -155,10 +164,11 @@ bot.on('callback_query', async (callbackQuery) => {
   if (!msg || !callbackQuery.from) return;
 
   // Create context from callback query
+  const session = await getSession(callbackQuery.from.id);
   const ctx: BotContext = {
     from: callbackQuery.from,
     message: msg,
-    session: getSession(callbackQuery.from.id),
+    session,
     bot
   };
 
@@ -592,7 +602,12 @@ bot.on('callback_query', async (callbackQuery) => {
         console.log(`Unhandled callback data: ${data}`);
       }
     }
-    
+
+    // Save session after processing
+    if (callbackQuery.from?.id) {
+      await saveSession(callbackQuery.from.id, ctx.session);
+    }
+
   } catch (error) {
     console.error('Callback query error:', error);
     await bot.sendMessage(msg.chat.id, '❌ Произошла ошибка. Попробуйте еще раз.');
@@ -603,7 +618,7 @@ bot.on('callback_query', async (callbackQuery) => {
 bot.on('contact', async (msg) => {
   if (!msg.from || !msg.contact) return;
 
-  const ctx = createBotContext(msg);
+  const ctx = await createBotContext(msg);
   const session = ctx.session;
 
   if (!session || !session.waitingFor) return;
@@ -616,6 +631,11 @@ bot.on('contact', async (msg) => {
       console.log(`Unhandled contact for state: ${session.waitingFor}`);
     });
 
+    // Save session after processing
+    if (msg.from?.id) {
+      await saveSession(msg.from.id, ctx.session);
+    }
+
   } catch (error) {
     console.error('Contact handler error:', error);
     await bot.sendMessage(msg.chat.id, '❌ Произошла ошибка при обработке контакта.');
@@ -626,7 +646,7 @@ bot.on('contact', async (msg) => {
 bot.on('message', async (msg) => {
   if (!msg.from || !msg.text || msg.text.startsWith('/')) return;
 
-  const ctx = createBotContext(msg);
+  const ctx = await createBotContext(msg);
   const session = ctx.session;
 
   // Check for quick points input patterns (e.g., "23 2", "23 -2", "+2 23", "-2 23")
@@ -720,6 +740,19 @@ bot.on('message', async (msg) => {
       const field = parts[2];
       await managerHandler.processEditStaffField(ctx, staffId, field, msg.text.trim());
     }
+    // BROADCAST MESSAGE HANDLERS
+    else if (session.waitingFor === 'broadcast_all_message') {
+      await managerHandler.processBroadcastMessage(ctx, msg.text, 'all');
+    }
+    else if (session.waitingFor === 'broadcast_birthday_message') {
+      await managerHandler.processBroadcastMessage(ctx, msg.text, 'birthday');
+    }
+    else if (session.waitingFor === 'broadcast_inactive_message') {
+      await managerHandler.processBroadcastMessage(ctx, msg.text, 'inactive');
+    }
+    else if (session.waitingFor === 'broadcast_vip_message') {
+      await managerHandler.processBroadcastMessage(ctx, msg.text, 'vip');
+    }
     // CLIENT AUTHENTICATION HANDLERS - use new middleware for unhandled states
     else {
       const { handleTextInput } = await import('./middleware/client.middleware');
@@ -727,6 +760,11 @@ bot.on('message', async (msg) => {
         // If not handled by client middleware, log unhandled state
         console.log(`Unhandled session state: ${session.waitingFor}`);
       });
+    }
+
+    // Save session after processing
+    if (msg.from?.id) {
+      await saveSession(msg.from.id, ctx.session);
     }
 
   } catch (error) {
@@ -739,7 +777,7 @@ bot.on('message', async (msg) => {
 bot.on('document', async (msg) => {
   if (!msg.from || !msg.document) return;
 
-  const ctx = createBotContext(msg);
+  const ctx = await createBotContext(msg);
   const session = ctx.session;
 
   if (!session || session.waitingFor !== 'import_clients_file') return;
@@ -775,10 +813,15 @@ bot.on('document', async (msg) => {
 
     // Process the imported file
     await adminHandler.processImportFile(ctx, fileContent);
-    
+
     // Clear session
     if (ctx.session) {
       delete ctx.session.waitingFor;
+    }
+
+    // Save session after processing
+    if (msg.from?.id) {
+      await saveSession(msg.from.id, ctx.session);
     }
 
   } catch (error) {
@@ -787,16 +830,14 @@ bot.on('document', async (msg) => {
   }
 });
 
-// Session cleanup (run every hour)
-setInterval(() => {
-  const oneHourAgo = Date.now() - (60 * 60 * 1000);
-  
-  for (const [userId, session] of sessions.entries()) {
-    if (session.lastActivity && session.lastActivity.getTime() < oneHourAgo) {
-      sessions.delete(userId);
-    }
+// Session cleanup (run every 30 minutes)
+setInterval(async () => {
+  try {
+    await sessionService.cleanupExpired();
+  } catch (error) {
+    console.error('Session cleanup error:', error);
   }
-}, 60 * 60 * 1000);
+}, 30 * 60 * 1000);
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
