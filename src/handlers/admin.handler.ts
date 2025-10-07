@@ -3,21 +3,23 @@ import Database from '../config/database';
 import { UserService } from '../services/user.service';
 import { ClientService } from '../services/client.service';
 import { PointService } from '../services/point.service';
+import { SessionService } from '../services/session.service';
 import { BotContext, getCurrentUser } from '../middleware/access.middleware';
 import { UserRole } from '../types/user.types';
-import { sessions } from '../index';
 
 export class AdminHandler {
   private bot: TelegramBot;
   private userService: UserService;
   private clientService: ClientService;
   private pointService: PointService;
+  private sessionService: SessionService;
 
   constructor(bot: TelegramBot) {
     this.bot = bot;
     this.userService = new UserService();
     this.clientService = new ClientService();
     this.pointService = new PointService();
+    this.sessionService = new SessionService();
   }
 
   // Show admin main menu with system overview
@@ -596,7 +598,7 @@ export class AdminHandler {
         dbSize: 0,
         dbResponseTime: 0,
         botStatus: '✅ Активен',
-        activeSessions: Object.keys(sessions).length,
+        activeSessions: await this.getActiveSessionsCount(),
         messagesToday: 0,
         errorsLastHour: 1,
         cpuUsage: 0,
@@ -704,7 +706,7 @@ export class AdminHandler {
   private async getBotMetrics(): Promise<any> {
     try {
       // Count active sessions
-      const activeSessions = Object.keys(sessions).length;
+      const activeSessions = await this.getActiveSessionsCount();
       
       // Get today's activity from database
       const today = new Date().toISOString().split('T')[0];
@@ -801,6 +803,21 @@ export class AdminHandler {
       totalSize: 1.8,
       lastRestore: null
     };
+  }
+
+  // Get active sessions count
+  private async getActiveSessionsCount(): Promise<number> {
+    try {
+      const result = await Database.queryOne(`
+        SELECT COUNT(*) as count
+        FROM sessions
+        WHERE expires_at > NOW()
+      `);
+      return parseInt(result.count) || 0;
+    } catch (error) {
+      console.error('Error getting active sessions count:', error);
+      return 0;
+    }
   }
 
   // Get audit log data
