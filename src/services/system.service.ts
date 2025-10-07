@@ -102,10 +102,20 @@ export class SystemService {
 
       // Get system uptime
       try {
-        const { stdout: uptimeOutput } = await execAsync('uptime -p');
-        metrics.uptime = uptimeOutput.trim();
+        const uptimeSeconds = Math.floor(process.uptime());
+        const days = Math.floor(uptimeSeconds / 86400);
+        const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+        if (days > 0) {
+          metrics.uptime = `${days}д ${hours}ч ${minutes}м`;
+        } else if (hours > 0) {
+          metrics.uptime = `${hours}ч ${minutes}м`;
+        } else {
+          metrics.uptime = `${minutes}м`;
+        }
       } catch (error) {
-        metrics.uptime = process.uptime().toString() + ' seconds';
+        metrics.uptime = 'Unknown';
       }
 
       // Get memory usage
@@ -117,12 +127,66 @@ export class SystemService {
       await Database.query('SELECT 1');
       metrics.responseTime = Date.now() - startTime;
 
-      // Get database connection count (mock for now)
-      metrics.dbConnections = 5;
+      // Get real database connection count
+      try {
+        const dbStats = await Database.queryOne(`
+          SELECT count(*) as connection_count
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+        `);
+        metrics.dbConnections = parseInt(dbStats.connection_count) || 0;
+      } catch (error) {
+        console.error('Error getting DB connection count:', error);
+        metrics.dbConnections = 0;
+      }
 
-      // Mock CPU and disk usage (in real implementation, use system monitoring tools)
-      metrics.cpu = Math.floor(Math.random() * 30) + 10;
-      metrics.disk = Math.floor(Math.random() * 20) + 25;
+      // Get real CPU usage (Node.js process)
+      try {
+        const cpuUsage = process.cpuUsage();
+        const totalCPU = cpuUsage.user + cpuUsage.system;
+        // Convert microseconds to percentage (rough estimate)
+        metrics.cpu = Math.min(100, Math.round((totalCPU / 1000000) / process.uptime() * 100));
+      } catch (error) {
+        console.error('Error getting CPU usage:', error);
+        metrics.cpu = 0;
+      }
+
+      // Get disk usage (platform-specific)
+      try {
+        const isWindows = process.platform === 'win32';
+
+        if (isWindows) {
+          // Windows: use WMIC to get disk space
+          const { stdout } = await execAsync('wmic logicaldisk get size,freespace,caption');
+          const lines = stdout.trim().split('\n').slice(1); // Skip header
+
+          let totalSize = 0;
+          let totalFree = 0;
+
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 3) {
+              const free = parseInt(parts[1]);
+              const size = parseInt(parts[2]);
+              if (!isNaN(free) && !isNaN(size)) {
+                totalFree += free;
+                totalSize += size;
+              }
+            }
+          }
+
+          if (totalSize > 0) {
+            metrics.disk = Math.round(((totalSize - totalFree) / totalSize) * 100);
+          }
+        } else {
+          // Linux/Unix: use df command
+          const { stdout } = await execAsync("df -h / | tail -1 | awk '{print $5}'");
+          metrics.disk = parseInt(stdout.replace('%', '')) || 0;
+        }
+      } catch (error) {
+        console.error('Error getting disk usage:', error);
+        metrics.disk = 0;
+      }
 
       return metrics;
 
@@ -357,7 +421,7 @@ export class SystemService {
     }
   }
 
-  // Get error logs
+  // Get error logs from database (activity_log table)
   async getErrorLogs(limit: number = 50): Promise<Array<{
     timestamp: Date;
     level: string;
@@ -365,20 +429,57 @@ export class SystemService {
     details?: any;
   }>> {
     try {
-      // In a real implementation, this would read from log files or a logging database
-      // For now, we'll return mock data
-      return [
-        {
-          timestamp: new Date(),
-          level: 'ERROR',
-          message: 'Database connection timeout',
-          details: { timeout: 5000, query: 'SELECT * FROM clients' }
-        }
-      ];
+      // Try to get error logs from activity_log or create a simple system
+      const sql = `
+        SELECT
+          created_at as timestamp,
+          'ERROR' as level,
+          action as message,
+          details
+        FROM activity_log
+        WHERE action LIKE '%error%' OR action LIKE '%fail%'
+        ORDER BY created_at DESC
+        LIMIT $1
+      `;
+
+      const logs = await Database.query(sql, [limit]);
+
+      // If no logs found, return empty array instead of mock data
+      if (logs.length === 0) {
+        return [];
+      }
+
+      return logs.map(log => ({
+        timestamp: new Date(log.timestamp),
+        level: log.level,
+        message: log.message,
+        details: typeof log.details === 'string' ? JSON.parse(log.details) : log.details
+      }));
 
     } catch (error) {
       console.error('Error getting error logs:', error);
+      // Return empty array instead of mock data on error
       return [];
+    }
+  }
+
+  // Log errors to database for tracking
+  async logError(message: string, details?: any, userId: number = 1): Promise<void> {
+    try {
+      const sql = `
+        INSERT INTO activity_log (user_id, action, target_type, details)
+        VALUES ($1, $2, 'system', $3)
+      `;
+
+      await Database.query(sql, [
+        userId,
+        `error: ${message}`,
+        JSON.stringify(details || {})
+      ]);
+
+    } catch (error) {
+      // Don't throw - just log to console to avoid recursive errors
+      console.error('Failed to log error to database:', error);
     }
   }
 

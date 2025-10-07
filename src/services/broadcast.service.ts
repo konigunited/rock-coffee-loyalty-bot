@@ -385,7 +385,10 @@ export class BroadcastService {
   }
 
   // Send birthday wishes to clients - DISABLED
-  async sendBirthdayWishes(): Promise<{
+  async sendBirthdayWishes(
+    autoBonusEnabled: boolean = false,
+    bonusAmount: number = 200
+  ): Promise<{
     success: boolean;
     sentCount: number;
     errors: string[];
@@ -393,7 +396,7 @@ export class BroadcastService {
     // Birthday auto-accrual is disabled
     console.log('Birthday wishes function is disabled');
     return { success: true, sentCount: 0, errors: [] };
-    
+
     /* DISABLED BIRTHDAY AUTO-ACCRUAL
     try {
       // Get clients with birthdays today
@@ -410,35 +413,50 @@ export class BroadcastService {
         return { success: true, sentCount: 0, errors: [] };
       }
 
-      const birthdayBonus = 200; // Birthday bonus points
       let sentCount = 0;
       const errors: string[] = [];
 
       for (const client of birthdayClients) {
         try {
-          // Award birthday bonus
-          await Database.query(`
-            UPDATE clients 
-            SET balance = balance + $1
-            WHERE id = $2
-          `, [birthdayBonus, client.id]);
+          let newBalance = client.balance;
 
-          // Log the bonus transaction
-          await Database.query(`
-            INSERT INTO point_transactions (client_id, operation_type, points, amount, description, operator_id)
-            VALUES ($1, 'earn', $2, 0, 'Birthday bonus', 1)
-          `, [client.id, birthdayBonus]);
+          // Award birthday bonus only if enabled
+          if (autoBonusEnabled && bonusAmount > 0) {
+            await Database.query(`
+              UPDATE clients
+              SET balance = balance + $1
+              WHERE id = $2
+            `, [bonusAmount, client.id]);
+
+            // Log the bonus transaction
+            await Database.query(`
+              INSERT INTO point_transactions (client_id, operation_type, points, amount, description, operator_id)
+              VALUES ($1, 'earn', $2, 0, 'Birthday bonus (auto)', 1)
+            `, [client.id, bonusAmount]);
+
+            newBalance = client.balance + bonusAmount;
+          }
 
           // Send birthday message
           const firstName = getFirstName(client.full_name);
-          const message = 
-            `🎉 **С днем рождения, ${firstName}!**\n\n` +
-            `🎂 Поздравляем вас с днем рождения от всей команды Rock Coffee!\n\n` +
-            `🎁 **Ваш праздничный подарок:**\n` +
-            `⭐ ${birthdayBonus} бонусных баллов уже начислены!\n` +
-            `💎 Ваш новый баланс: *${client.balance + birthdayBonus} баллов*\n\n` +
-            `🥳 Желаем здоровья, счастья и отличного настроения!\n` +
-            `☕ Ждем вас на праздничный кофе с друзьями и близкими!`;
+
+          let message: string;
+          if (autoBonusEnabled && bonusAmount > 0) {
+            message =
+              `🎉 *С днем рождения, ${firstName}!*\n\n` +
+              `🎂 Поздравляем вас с днем рождения от всей команды Rock Coffee!\n\n` +
+              `🎁 *Ваш праздничный подарок:*\n` +
+              `⭐ ${bonusAmount} бонусных баллов уже начислены!\n` +
+              `💎 Ваш новый баланс: *${newBalance} баллов*\n\n` +
+              `🥳 Желаем здоровья, счастья и отличного настроения!\n` +
+              `☕ Ждем вас на праздничный кофе с друзьями и близкими!`;
+          } else {
+            message =
+              `🎉 *С днем рождения, ${firstName}!*\n\n` +
+              `🎂 Поздравляем вас с днем рождения от всей команды Rock Coffee!\n\n` +
+              `🥳 Желаем здоровья, счастья и отличного настроения!\n` +
+              `☕ Ждем вас сегодня - у нас для вас есть сюрприз!`;
+          }
 
           await this.bot.sendMessage(client.telegram_id, message, {
             parse_mode: 'Markdown',

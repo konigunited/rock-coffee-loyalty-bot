@@ -286,31 +286,29 @@ export class NotificationService {
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       const sql = `
-        SELECT 
+        SELECT
           COUNT(*) as total_transactions,
           COUNT(DISTINCT client_id) as unique_clients,
           COUNT(DISTINCT operator_id) as active_baristas,
           SUM(CASE WHEN operation_type = 'earn' THEN points ELSE 0 END) as points_earned,
-          SUM(CASE WHEN operation_type = 'spend' THEN ABS(points) ELSE 0 END) as points_spent,
-          SUM(CASE WHEN operation_type = 'earn' THEN amount ELSE 0 END) as total_revenue
+          SUM(CASE WHEN operation_type = 'spend' THEN ABS(points) ELSE 0 END) as points_spent
         FROM point_transactions
         WHERE created_at >= $1 AND created_at < $2
           AND operation_type IN ('earn', 'spend')
       `;
 
       const stats = await Database.queryOne(sql, [today, tomorrow]);
-      
+
       const managers = await this.userService.getByRole('manager');
 
-      const message = 
+      const message =
         `📊 *Дневная статистика*\n` +
         `📅 ${today.toLocaleDateString('ru-RU')}\n\n` +
         `👥 Обслужено клиентов: *${stats.unique_clients || 0}*\n` +
         `👔 Работало бариста: *${stats.active_baristas || 0}*\n` +
         `📝 Всего операций: *${stats.total_transactions || 0}*\n` +
         `⭐ Начислено баллов: *${stats.points_earned || 0}*\n` +
-        `💸 Списано баллов: *${stats.points_spent || 0}*\n` +
-        `💰 Начислено баллов: *${stats.total_points_earned || 0}*`;
+        `💸 Списано баллов: *${stats.points_spent || 0}*`;
 
       for (const manager of managers) {
         if (manager.telegram_id) {
