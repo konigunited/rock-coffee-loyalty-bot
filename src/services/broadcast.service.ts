@@ -2,16 +2,9 @@ import TelegramBot from 'node-telegram-bot-api';
 import Database from '../config/database';
 import { ClientService } from './client.service';
 
-// Helper function to extract first name from full name
-function getFirstName(fullName: string): string {
-  if (!fullName || typeof fullName !== 'string') return 'друг';
-  
-  // Split by spaces and return second part (first name) or first part if only one word
-  const parts = fullName.trim().split(' ');
-  if (parts.length >= 2) {
-    return parts[1]; // Return first name (Иван from "Иванов Иван Иванович")
-  }
-  return parts[0]; // Return single word if no spaces
+// Helper function to format card number for display
+function formatCardNumber(cardNumber: number): string {
+  return cardNumber.toString();
 }
 
 export interface BroadcastMessage {
@@ -77,11 +70,11 @@ export class BroadcastService {
   }
 
   // Get broadcast recipients based on segment
-  async getBroadcastRecipients(segment: string, customFilters?: any): Promise<Array<{ client_id: number; telegram_id: number; full_name: string }>> {
+  async getBroadcastRecipients(segment: string, customFilters?: any): Promise<Array<{ client_id: number; telegram_id: number; full_name: string; card_number: number }>> {
     try {
       let sql = `
-        SELECT id as client_id, telegram_id, full_name
-        FROM clients 
+        SELECT id as client_id, telegram_id, full_name, card_number
+        FROM clients
         WHERE is_active = true AND telegram_id IS NOT NULL
       `;
       const params: any[] = [];
@@ -89,6 +82,10 @@ export class BroadcastService {
       switch (segment) {
         case 'active':
           sql += ` AND last_visit >= CURRENT_DATE - INTERVAL '30 days'`;
+          break;
+
+        case 'inactive':
+          sql += ` AND last_visit < CURRENT_DATE - INTERVAL '30 days'`;
           break;
 
         case 'vip':
@@ -215,11 +212,16 @@ export class BroadcastService {
   // Send message to individual recipient
   private async sendMessageToRecipient(
     broadcast: BroadcastMessage,
-    recipient: { client_id: number; telegram_id: number; full_name: string }
+    recipient: { client_id: number; telegram_id: number; full_name: string; card_number: number }
   ): Promise<void> {
     try {
-      const firstName = getFirstName(recipient.full_name);
-      let personalizedMessage = broadcast.message.replace('{name}', firstName);
+      const cardNumber = formatCardNumber(recipient.card_number);
+      // Support {card}, {карта}, {name}, {имя} placeholders
+      let personalizedMessage = broadcast.message
+        .replace(/{card}/gi, cardNumber)
+        .replace(/{карта}/gi, cardNumber)
+        .replace(/{name}/gi, cardNumber)
+        .replace(/{имя}/gi, cardNumber);
       
       if (broadcast.image_url) {
         await this.bot.sendPhoto(recipient.telegram_id, broadcast.image_url, {
@@ -483,6 +485,55 @@ export class BroadcastService {
       return { success: false, sentCount: 0, errors: [error instanceof Error ? error.message : 'Unknown error'] };
     }
     */
+  }
+
+  // Send test broadcast to specific user
+  async sendTestBroadcast(
+    message: string,
+    imageUrl: string | undefined,
+    recipientTelegramId: number,
+    recipientCardNumber: number
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const cardNumber = formatCardNumber(recipientCardNumber);
+      // Support {card}, {карта}, {name}, {имя} placeholders
+      let personalizedMessage = message
+        .replace(/{card}/gi, cardNumber)
+        .replace(/{карта}/gi, cardNumber)
+        .replace(/{name}/gi, cardNumber)
+        .replace(/{имя}/gi, cardNumber);
+
+      if (imageUrl) {
+        await this.bot.sendPhoto(recipientTelegramId, imageUrl, {
+          caption: personalizedMessage,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '💳 Моя карта', callback_data: 'my_card' }],
+              [{ text: '🏠 Главное меню', callback_data: 'client_main_menu' }]
+            ]
+          }
+        });
+      } else {
+        await this.bot.sendMessage(recipientTelegramId, personalizedMessage, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '💳 Моя карта', callback_data: 'my_card' }],
+              [{ text: '🏠 Главное меню', callback_data: 'client_main_menu' }]
+            ]
+          }
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending test broadcast:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 
   // Utility function to chunk array

@@ -1474,7 +1474,7 @@ export class ManagerHandler {
         '📢 *Рассылка всем клиентам*\n\n' +
         `📊 Получателей: ${recipients.length} клиентов\n\n` +
         '📝 Отправьте текст сообщения для рассылки.\n\n' +
-        '💡 Можно использовать {name} для имени клиента';
+        '💡 Можно использовать {карта} или {card} для номера карты клиента';
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
@@ -1485,6 +1485,7 @@ export class ManagerHandler {
       // Set session to wait for broadcast message
       if (ctx.session) {
         ctx.session.waitingFor = 'broadcast_all_message';
+        ctx.session.broadcastSegment = 'all';
       }
 
     } catch (error) {
@@ -1511,7 +1512,7 @@ export class ManagerHandler {
         '🎂 *Рассылка именинникам*\n\n' +
         `📊 Получателей: ${recipients.length} клиентов\n\n` +
         '📝 Отправьте текст поздравления.\n\n' +
-        '💡 Используйте {name} для имени клиента';
+        '💡 Используйте {карта} или {card} для номера карты клиента';
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
@@ -1521,6 +1522,7 @@ export class ManagerHandler {
 
       if (ctx.session) {
         ctx.session.waitingFor = 'broadcast_birthday_message';
+        ctx.session.broadcastSegment = 'birthday';
       }
 
     } catch (error) {
@@ -1556,7 +1558,7 @@ export class ManagerHandler {
         `📊 Получателей: ${recipients.length} клиентов\n` +
         `(не посещали более 30 дней)\n\n` +
         '📝 Отправьте текст сообщения.\n\n' +
-        '💡 Используйте {name} для имени клиента';
+        '💡 Используйте {карта} или {card} для номера карты клиента';
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
@@ -1566,6 +1568,7 @@ export class ManagerHandler {
 
       if (ctx.session) {
         ctx.session.waitingFor = 'broadcast_inactive_message';
+        ctx.session.broadcastSegment = 'inactive';
       }
 
     } catch (error) {
@@ -1593,7 +1596,7 @@ export class ManagerHandler {
         `📊 Получателей: ${recipients.length} клиентов\n` +
         `(траты 10000₽+)\n\n` +
         '📝 Отправьте текст сообщения.\n\n' +
-        '💡 Используйте {name} для имени клиента';
+        '💡 Используйте {карта} или {card} для номера карты клиента';
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [{ text: '◀️ К уведомлениям', callback_data: 'manager_notifications' }]
