@@ -14,6 +14,7 @@ export interface BotContext {
     client?: any;
     selectedClientId?: number;
     waitingFor?: string;
+    broadcastSegment?: string;
     operation?: any;
     editing?: any;
     registration?: any;
