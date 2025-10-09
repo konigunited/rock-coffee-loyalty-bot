@@ -43,7 +43,7 @@ async function createTestDatabase(): Promise<void> {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '7R4P5T4R',
+    password: process.env.DB_PASSWORD || process.env.TEST_DB_PASSWORD,
     database: 'postgres'
   });
 
@@ -63,7 +63,7 @@ async function createTestDatabase(): Promise<void> {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '7R4P5T4R',
+    password: process.env.DB_PASSWORD || process.env.TEST_DB_PASSWORD,
     database: process.env.DB_NAME || 'rock_coffee_bot_test'
   });
 }

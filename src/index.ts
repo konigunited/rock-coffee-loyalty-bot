@@ -3,6 +3,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import Database from './config/database';
 import { BaristaHandler } from './handlers/barista.handler';
 import { ManagerHandler } from './handlers/manager.handler';
@@ -48,6 +49,17 @@ const adminHandler = new AdminHandler(bot);
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+
+// Rate limiting middleware
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'), // 1 minute default
+  max: parseInt(process.env.RATE_LIMIT_MAX || '100'), // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+app.use('/api/', limiter); // Apply to all API routes
 
 // Health check endpoint
 app.get('/health', (req, res) => {

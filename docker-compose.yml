@@ -7,10 +7,10 @@ services:
     container_name: rock_coffee_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: rock_coffee_bot
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 7R4P5T4R
-      TZ: Europe/Kaliningrad
+      POSTGRES_DB: ${DB_NAME:-rock_coffee_bot}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Database password must be set in .env.production}
+      TZ: ${TZ:-Europe/Kaliningrad}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
@@ -34,16 +34,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      NODE_ENV: production
-      BOT_TOKEN: 8369634150:AAHAlkUetDEm6lNSsyFZ1cghLXtLQV72Vcs
+      NODE_ENV: ${NODE_ENV:-production}
+      BOT_TOKEN: ${BOT_TOKEN:?Bot token must be set in .env.production}
       DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: rock_coffee_bot
-      DB_USER: postgres
-      DB_PASSWORD: 7R4P5T4R
-      JWT_SECRET: your_jwt_secret_here
-      PORT: 3000
-      TZ: Europe/Kaliningrad
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-rock_coffee_bot}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Database password must be set in .env.production}
+      JWT_SECRET: ${JWT_SECRET:?JWT secret must be set in .env.production}
+      SESSION_SECRET: ${SESSION_SECRET:?Session secret must be set in .env.production}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      PORT: ${PORT:-3000}
+      TZ: ${TZ:-Europe/Kaliningrad}
     ports:
       - "3000:3000"
     volumes:
