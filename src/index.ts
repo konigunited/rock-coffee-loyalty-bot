@@ -594,7 +594,11 @@ bot.on('callback_query', async (callbackQuery) => {
       const template = parts[2];
       await managerHandler.sendSMSTemplate(ctx, clientId, template);
     }
-    
+    else if (data.startsWith('sms_custom:')) {
+      const clientId = parseInt(data.split(':')[1]);
+      await managerHandler.startCustomSMS(ctx, clientId);
+    }
+
     // Try to handle client callbacks
     else {
       const handled = await handleClientCallbacks(ctx, data);
@@ -752,6 +756,11 @@ bot.on('message', async (msg) => {
     }
     else if (session.waitingFor === 'broadcast_vip_message') {
       await managerHandler.processBroadcastMessage(ctx, msg.text, 'vip');
+    }
+    // CUSTOM SMS MESSAGE HANDLER
+    else if (session.waitingFor && session.waitingFor.startsWith('custom_sms_message:')) {
+      const clientId = parseInt(session.waitingFor.split(':')[1]);
+      await managerHandler.processCustomSMS(ctx, clientId, msg.text);
     }
     // CLIENT AUTHENTICATION HANDLERS - use new middleware for unhandled states
     else {

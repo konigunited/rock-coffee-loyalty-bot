@@ -2322,6 +2322,9 @@ export class ManagerHandler {
           { text: '💰 Баланс баллов', callback_data: `sms_template:${clientId}:balance` },
           { text: '☕ Приглашение', callback_data: `sms_template:${clientId}:invite` }
         ],
+        [
+          { text: '✏️ Свое сообщение', callback_data: `sms_custom:${clientId}` }
+        ],
         [{ text: '◀️ К клиенту', callback_data: `manager_client:${clientId}` }]
       ];
 
@@ -3178,6 +3181,108 @@ export class ManagerHandler {
     } catch (error) {
       console.error('Process broadcast message error:', error);
       await this.sendMessage(ctx, '❌ Ошибка при отправке рассылки');
+    }
+  }
+
+  // Start custom SMS message
+  async startCustomSMS(ctx: BotContext, clientId: number): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const client = await this.clientService.getForManager(clientId);
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Клиент не найден');
+        return;
+      }
+
+      if (!client.telegram_id) {
+        await this.sendMessage(ctx, '❌ Клиент не подключен к Telegram боту');
+        return;
+      }
+
+      const message =
+        `✏️ *Свое сообщение клиенту*\n\n` +
+        `👤 ${client.full_name}\n` +
+        `💬 Telegram ID: ${client.telegram_id}\n\n` +
+        `📝 Введите текст сообщения, которое хотите отправить клиенту:`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '◀️ К клиенту', callback_data: `manager_client:${clientId}` }]
+      ];
+
+      await this.editMessage(ctx, message, keyboard);
+
+      if (ctx.session) {
+        ctx.session.waitingFor = `custom_sms_message:${clientId}`;
+      }
+
+    } catch (error) {
+      console.error('Start custom SMS error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при подготовке отправки сообщения');
+    }
+  }
+
+  // Process custom SMS message
+  async processCustomSMS(ctx: BotContext, clientId: number, messageText: string): Promise<void> {
+    if (!await checkManagerAccess(ctx)) {
+      return;
+    }
+
+    try {
+      const user = getCurrentUser(ctx);
+      if (!user) {
+        await this.sendMessage(ctx, '❌ Пользователь не найден');
+        return;
+      }
+
+      const client = await this.clientService.getForManager(clientId);
+      if (!client) {
+        await this.sendMessage(ctx, '❌ Клиент не найден');
+        return;
+      }
+
+      if (!client.telegram_id) {
+        await this.sendMessage(ctx, '❌ Клиент не подключен к Telegram боту');
+        return;
+      }
+
+      // Send custom message using Telegram message service
+      const result = await this.messageService.sendMessage(
+        clientId,
+        messageText,
+        'custom',
+        user.id
+      );
+
+      const statusIcon = result.success ? '✅' : '❌';
+      const statusText = result.success
+        ? 'Сообщение отправлено через Telegram!'
+        : `Ошибка: ${result.error}`;
+
+      const message =
+        `${statusIcon} *${statusText}*\n\n` +
+        `👤 ${client.full_name}\n` +
+        `💬 Telegram ID: ${client.telegram_id}\n\n` +
+        `📝 *Текст сообщения:*\n${messageText}\n\n` +
+        `⏰ ${new Date().toLocaleString('ru-RU')}`;
+
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [
+        [{ text: '📱 Отправить еще', callback_data: `send_sms:${clientId}` }],
+        [{ text: '◀️ К клиенту', callback_data: `manager_client:${clientId}` }]
+      ];
+
+      await this.sendMessage(ctx, message, keyboard);
+
+      // Clear session
+      if (ctx.session) {
+        delete ctx.session.waitingFor;
+      }
+
+    } catch (error) {
+      console.error('Process custom SMS error:', error);
+      await this.sendMessage(ctx, '❌ Ошибка при отправке сообщения');
     }
   }
 }
