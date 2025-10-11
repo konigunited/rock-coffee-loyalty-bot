@@ -120,6 +120,11 @@ bot.onText(/\/start/, async (msg) => {
         const { ClientHandler } = await import('./handlers/client.handler');
         const clientHandler = new ClientHandler(bot);
         await clientHandler.startAuthentication(ctx);
+
+        // Save session after authentication start
+        if (msg.from?.id) {
+          await saveSession(msg.from.id, ctx.session);
+        }
       });
       return;
     }
