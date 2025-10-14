@@ -4,6 +4,23 @@
 
 ---
 
+## Шаг 0: Проверь что код уже запушен
+
+```bash
+# Проверить что нет незакоммиченных файлов
+git status
+
+# Убедиться, что последний коммит в origin
+git push origin main
+
+# Проверить, что origin/main действительно указывает на свежий коммит
+git log origin/main -1
+```
+
+Только после этого переходи на сервер — иначе `git pull` не заберёт последние правки.
+
+---
+
 ## Шаг 1: Подключение и подготовка
 
 ```bash
@@ -49,11 +66,12 @@ git log --oneline -1
 # Скачать обновления
 git pull origin main
 
-# Должно быть:
-# - migrations/005_telegram_messages_log.sql
-# - migrations/006_sessions_table.sql
-# - src/services/session.service.ts
-# и другие файлы
+# Проверь что подтянулись свежие файлы:
+# - migrations/008_add_last_birthday_bonus.sql
+# - src/services/birthday.service.ts
+# - src/index.ts (новый сервис стартует при запуске)
+# - SAFE_DEPLOY_COMMANDS.md (эти инструкции)
+# и другие связанные файлы
 ```
 
 ---
@@ -61,27 +79,27 @@ git pull origin main
 ## Шаг 4: Применить миграции БД (БЕЗ остановки бота)
 
 ```bash
-# Скопировать миграции в контейнер БД
-docker cp migrations/005_telegram_messages_log.sql rock_coffee_db:/tmp/
-docker cp migrations/006_sessions_table.sql rock_coffee_db:/tmp/
+# Скопировать актуальные миграции в контейнер БД
+docker cp migrations/005_telegram_messages_log.sql rock_coffee_db:/tmp/ || true
+docker cp migrations/006_sessions_table.sql rock_coffee_db:/tmp/ || true
+docker cp migrations/008_add_last_birthday_bonus.sql rock_coffee_db:/tmp/
 
-# Применить миграцию 005 (telegram_messages_log)
-docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -f /tmp/005_telegram_messages_log.sql
+# Применить миграцию 005 (если ещё не применена)
+docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -f /tmp/005_telegram_messages_log.sql || true
 
-# Применить миграцию 006 (sessions)
-docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -f /tmp/006_sessions_table.sql
+# Применить миграцию 006 (если ещё не применена)
+docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -f /tmp/006_sessions_table.sql || true
 
-# Проверить что таблицы созданы
-docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('telegram_messages_log', 'sessions') ORDER BY tablename;"
+# Применить миграцию 008 (новая колонка для бонусов ДР)
+docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -f /tmp/008_add_last_birthday_bonus.sql
+
+# Проверить что колонка существует
+docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -c "\d+ clients" | grep last_birthday_bonus_at
 ```
 
-**Должен показать:**
+**Должен показать строку вида:**
 ```
-     tablename
---------------------
- sessions
- telegram_messages_log
-(2 rows)
+ last_birthday_bonus_at | timestamp with time zone |           | 
 ```
 
 ✅ **Важно:** Миграции НЕ изменяют существующие данные, только добавляют новые таблицы!
@@ -122,11 +140,9 @@ curl http://localhost:3000/health
 # Должен вернуть:
 # {"status":"ok","timestamp":"2025-..."}
 
-# 3. Проверить что бот запущен
+# 3. Проверить что бот запущен и сервис поздравлений стартовал
 docker-compose ps bot
-
-# Должен быть:
-# STATUS: Up
+docker-compose logs --tail=20 bot | grep BirthdayService
 
 # 4. Проверить сессии в БД
 docker exec -it rock_coffee_db psql -U postgres -d rock_coffee_bot -c "SELECT COUNT(*) as active_sessions FROM sessions WHERE expires_at > NOW();"

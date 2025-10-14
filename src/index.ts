@@ -12,6 +12,7 @@ import { BotContext, checkBaristaAccess, checkManagerAccess, checkAdminAccess, g
 import { UserService } from './services/user.service';
 import { SessionService } from './services/session.service';
 import { ensureNotAuthenticated, handleClientCallbacks } from './middleware/client.middleware';
+import { BirthdayService } from './services/birthday.service';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +45,7 @@ const sessionService = new SessionService();
 const baristaHandler = new BaristaHandler(bot);
 const managerHandler = new ManagerHandler(bot);
 const adminHandler = new AdminHandler(bot);
+const birthdayService = new BirthdayService(bot);
 
 // Middleware
 app.use(helmet());
@@ -868,6 +870,7 @@ setInterval(async () => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('Received SIGTERM, shutting down gracefully...');
+  birthdayService.stop();
   await bot.stopPolling();
   await Database.close();
   process.exit(0);
@@ -875,6 +878,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('Received SIGINT, shutting down gracefully...');
+  birthdayService.stop();
   await bot.stopPolling();
   await Database.close();
   process.exit(0);
@@ -889,5 +893,8 @@ app.listen(port, () => {
 // Start the bot
 console.log('🤖 Telegram Bot is starting...');
 console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+// Start daily birthday processing
+birthdayService.start();
 
 export default app;
