@@ -90,7 +90,7 @@ export class ClientNotificationService {
   }
 
   // Send birthday wishes and bonus
-  async sendBirthdayWish(clientId: number, bonusPoints: number = 100): Promise<void> {
+  async sendBirthdayWish(clientId: number, bonusPoints: number = 10): Promise<void> {
     try {
       const clientWithTelegram = await this.getClientWithTelegramId(clientId);
       

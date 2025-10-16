@@ -1901,7 +1901,7 @@ export class ManagerHandler {
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [
         [
-          { text: '🎂 День рождения (+100)', callback_data: `confirm_bonus:${clientId}:100:birthday` },
+          { text: '🎂 День рождения (+10)', callback_data: `confirm_bonus:${clientId}:10:birthday` },
           { text: '🎉 Праздничный (+50)', callback_data: `confirm_bonus:${clientId}:50:holiday` }
         ],
         [

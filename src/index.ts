@@ -12,6 +12,7 @@ import { BotContext, checkBaristaAccess, checkManagerAccess, checkAdminAccess, g
 import { UserService } from './services/user.service';
 import { SessionService } from './services/session.service';
 import { ensureNotAuthenticated, handleClientCallbacks } from './middleware/client.middleware';
+import { BirthdayService } from './services/birthday.service';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +45,7 @@ const sessionService = new SessionService();
 const baristaHandler = new BaristaHandler(bot);
 const managerHandler = new ManagerHandler(bot);
 const adminHandler = new AdminHandler(bot);
+const birthdayService = new BirthdayService(bot);
 
 // Middleware
 app.use(helmet());
@@ -100,6 +102,15 @@ export { getSession, saveSession, clearSessionField };
 bot.on('polling_error', (error) => {
   console.error('Bot polling error:', error);
 });
+
+// Start birthday bonus scheduler (configurable via ENABLE_BIRTHDAY_BONUS=false)
+const enableBirthdayBonus = (process.env.ENABLE_BIRTHDAY_BONUS || 'true').toLowerCase() !== 'false';
+if (enableBirthdayBonus) {
+  console.log('🎂 Запуск планировщика начисления бонусов ко дню рождения');
+  birthdayService.startDailySchedule();
+} else {
+  console.log('🎂 Планировщик начисления бонусов ко дню рождения отключён переменной ENABLE_BIRTHDAY_BONUS');
+}
 
 // Start command
 bot.onText(/\/start/, async (msg) => {
