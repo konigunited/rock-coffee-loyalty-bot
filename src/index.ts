@@ -191,21 +191,22 @@ bot.on('callback_query', async (callbackQuery) => {
   const msg = callbackQuery.message;
   if (!msg || !callbackQuery.from) return;
 
-  // Create context from callback query
-  const session = await getSession(callbackQuery.from.id);
-  const ctx: BotContext = {
-    from: callbackQuery.from,
-    message: msg,
-    session,
-    bot
-  };
-
   const data = callbackQuery.data;
   if (!data) return;
 
   try {
-    // Answer callback query to remove loading state
+    // Start loading the session but answer Telegram immediately to avoid timeout warnings
+    const sessionPromise = getSession(callbackQuery.from.id);
+
     await bot.answerCallbackQuery(callbackQuery.id);
+
+    const session = await sessionPromise;
+    const ctx: BotContext = {
+      from: callbackQuery.from,
+      message: msg,
+      session,
+      bot
+    };
 
     // Route callback data
     if (data === 'barista_menu') {
